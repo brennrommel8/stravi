@@ -1,13 +1,13 @@
 {
   "name": "create-stravix",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "description": "Scaffold a Stravix backend app",
   "type": "module",
   "bin": {
-    "create-stravix": "./bin/create-stravix.js"
+    "create-stravix": "./cli.js"
   },
   "files": [
-    "bin",
+    "cli.js",
     "template"
   ],
   "keywords": [
@@ -23,5 +23,3 @@
     "node": ">=18"
   }
 }
-
-

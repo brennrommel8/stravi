@@ -12,6 +12,32 @@ function printUsage() {
   console.log('Example: npm create stravix@latest my-api')
 }
 
+function detectPackageManager() {
+  const ua = process.env.npm_config_user_agent || ''
+  if (ua.startsWith('pnpm/')) return 'pnpm'
+  if (ua.startsWith('yarn/')) return 'yarn'
+  if (ua.startsWith('bun/')) return 'bun'
+  return 'npm'
+}
+
+function getNextStepCommands() {
+  const pm = detectPackageManager()
+
+  if (pm === 'pnpm') {
+    return { install: 'pnpm install', dev: 'pnpm dev' }
+  }
+
+  if (pm === 'yarn') {
+    return { install: 'yarn', dev: 'yarn dev' }
+  }
+
+  if (pm === 'bun') {
+    return { install: 'bun install', dev: 'bun run dev' }
+  }
+
+  return { install: 'npm install', dev: 'npm run dev' }
+}
+
 async function exists(targetPath) {
   try {
     await access(targetPath, fsConstants.F_OK)
@@ -41,7 +67,7 @@ async function run() {
     process.exit(1)
   }
 
-  const templateDir = path.resolve(__dirname, '../template')
+  const templateDir = path.resolve(__dirname, 'template')
 
   await mkdir(targetDir, { recursive: true })
   await cp(templateDir, targetDir, { recursive: true })
@@ -52,13 +78,22 @@ async function run() {
   packageJson.name = projectName
   await writeFile(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`, 'utf8')
 
+  const tsconfigPath = path.join(targetDir, 'tsconfig.json')
+  const tsconfigRaw = await readFile(tsconfigPath, 'utf8')
+  const tsconfig = JSON.parse(tsconfigRaw)
+
+  if (tsconfig?.compilerOptions?.paths) {
+    delete tsconfig.compilerOptions.paths
+    await writeFile(tsconfigPath, `${JSON.stringify(tsconfig, null, 2)}\n`, 'utf8')
+  }
+
+  const nextSteps = getNextStepCommands()
+
   console.log('\nStravix app created successfully.')
-  console.log(`\nNext steps:\n  cd ${projectName}\n  npm install\n  npm run dev\n`)
+  console.log(`\nNext steps:\n  cd ${projectName}\n  ${nextSteps.install}\n  ${nextSteps.dev}\n`)
 }
 
 run().catch((error) => {
   console.error('Failed to create app:', error)
   process.exit(1)
 })
-
-
