@@ -65,16 +65,23 @@ Built-in middleware:
 - `cors` is built-in (no external install required).
 - Exposed as a first-party module import: `stravix/cors`.
 - Configurable through `app.use(cors(options))`.
+- Built-in dev runner: `stravix-dev` (auto-restart on file changes, nodemon-like).
 
 ## 7) Developer API (Simpler Than Express/Hono)
 Syntax rules:
 1. Use class construction: `new Stravix()`.
 2. Route handlers use a single context param: `svx`.
 3. Response helpers are on `svx` (`svx.json()`, `svx.text()`, `svx.html()`).
-4. `app.use()` registers middleware globally.
-5. `app.get()/post()/put()/delete()` is the primary route style.
-6. Server boot uses `app.start(port)`.
-7. Core request context is built-in: `svx.query`, `svx.body`, `svx.headers`, `svx.cookies`, `svx.state`, `svx.env`.
+4. Error boundary is built-in via `app.onError(...)`.
+5. Throw `HttpError` for status-aware failures.
+6. Redirect + status helpers are first-class: `svx.redirect()`, `svx.status()`.
+7. Cookie helpers are built-in: `svx.cookies.get/set/delete`, `svx.cookie()`, `svx.clearCookie()`.
+8. Static file serving and logger are built-in middleware modules.
+9. `app.use()` registers middleware globally.
+10. `app.get()/post()/put()/delete()` is the primary route style.
+11. Server boot uses `app.start(port)`.
+12. Core request context is built-in: `svx.query`, `svx.body`, `svx.headers`, `svx.cookies`, `svx.state`, `svx.env`.
+13. Route modules can use `Router` (`router.use/get/post/...`) and mount with `app.route('/prefix', router)`.
 
 ```ts
 import { Stravix } from 'stravix'
@@ -91,6 +98,60 @@ app.get('/', (svx) => {
 })
 
 app.start(3000)
+```
+
+Error handling:
+```ts
+import { HttpError, Stravix } from 'stravix'
+
+const app = new Stravix()
+
+app.onError((err, svx) => {
+  return svx.json({
+    error: err instanceof Error ? err.message : 'Unknown error'
+  }, 500)
+})
+
+app.get('/admin', () => {
+  throw new HttpError(401, 'Unauthorized')
+})
+```
+
+Response helpers:
+```ts
+app.get('/redirect', (svx) => svx.redirect('/home'))
+
+app.get('/home', (svx) => {
+  return svx.status(200).html('<h1>Home</h1>')
+})
+```
+
+Built-in static + logger:
+```ts
+import logger from 'stravix/logger'
+import serveStatic from 'stravix/static'
+
+app.use(logger())
+app.use(serveStatic({ root: './public' }))
+```
+
+Route module style:
+```ts
+import { Router } from 'stravix'
+
+const router = new Router()
+
+router.use('/private', async (svx, next) => {
+  // private middleware
+  if (!next) return
+  return next()
+})
+
+router.get('/posts/:id', (svx) => {
+  return svx.text(`Post ${svx.param('id')}`)
+})
+
+// mount in main app: app.route('/api', router)
 ```
 
 More examples:
@@ -240,5 +301,7 @@ Recommended behavior contracts:
 2. Implement `@stravix/router` and `@stravix/core` first.
 3. Add benchmark harness (`autocannon`) before advanced features.
 4. Freeze initial API surface after Milestone 1.
+
+
 
 

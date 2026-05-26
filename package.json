@@ -1,6 +1,6 @@
 {
   "name": "stravix",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Stravix lightweight Node.js backend framework",
   "type": "module",
   "main": "./dist/src/index.js",
@@ -11,24 +11,51 @@
       "default": "./dist/src/index.js"
     },
     "./cors": {
-      "types": "./dist/packages/cors/src/index.d.ts",
-      "default": "./dist/packages/cors/src/index.js"
+      "types": "./dist/packages/middleware/cors/src/index.d.ts",
+      "default": "./dist/packages/middleware/cors/src/index.js"
     },
     "./validator": {
       "types": "./dist/packages/validator/src/index.d.ts",
       "default": "./dist/packages/validator/src/index.js"
+    },
+    "./static": {
+      "types": "./dist/packages/middleware/static/src/index.d.ts",
+      "default": "./dist/packages/middleware/static/src/index.js"
+    },
+    "./logger": {
+      "types": "./dist/packages/middleware/logger/src/index.d.ts",
+      "default": "./dist/packages/middleware/logger/src/index.js"
+    },
+    "./dev": {
+      "default": "./dist/packages/dev/src/index.js"
     }
   },
+  "bin": {
+    "stravix-dev": "./dist/packages/dev/src/index.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "clean": "node -e \"const fs=require('node:fs'); fs.rmSync('dist',{recursive:true,force:true});\"",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node --test"
+    "test": "npm run build && node --test",
+    "bench": "npm run build && node benchmarks/run.js",
+    "bench:quick": "npm run build && node benchmarks/run.js --duration 10 --connections 50 --pipelining 1"
   },
   "engines": {
     "node": ">=18"
   },
+  "dependencies": {
+    "tsx": "^4.20.6"
+  },
   "devDependencies": {
     "@types/node": "^25.9.1",
+    "@hono/node-server": "^1.13.8",
+    "autocannon": "^8.0.0",
+    "express": "^5.1.0",
+    "hono": "^4.10.6",
     "typescript": "^5.8.3",
     "zod": "^4.4.3"
   },
@@ -40,5 +67,3 @@
   ],
   "license": "MIT"
 }
-
-

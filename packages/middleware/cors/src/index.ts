@@ -1,4 +1,4 @@
-import type { CorsOptions, Middleware } from '../../core/src/types.js'
+import type { CorsOptions, Middleware } from '../../../core/src/types.js'
 
 const DEFAULT_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
 

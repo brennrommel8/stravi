@@ -4,8 +4,19 @@ import type {
   HeaderValue,
   HeadersInput,
   InternalStravixContext,
-  NormalizedHeaders
+  NormalizedHeaders,
+  StravixContext
 } from './types.js'
+
+const staticJsonCache = new WeakMap<object, Buffer>()
+
+function getStaticJsonBuffer(value: object): Buffer {
+  let cached = staticJsonCache.get(value)
+  if (cached) return cached
+  cached = Buffer.from(JSON.stringify(value))
+  staticJsonCache.set(value, cached)
+  return cached
+}
 
 function toCookieHeader(name: string, value: string, options: CookieOptions = {}): string {
   const encoded = `${encodeURIComponent(name)}=${encodeURIComponent(value)}`
@@ -48,11 +59,33 @@ function normalizeHeaders(headers: HeadersInput): NormalizedHeaders {
   return Object.freeze(out)
 }
 
-function initialQuery(url: URL): Record<string, string | undefined> {
+function decodeQueryComponent(value: string): string {
+  return decodeURIComponent(value.replace(/\+/g, ' '))
+}
+
+function initialQuery(rawQuery: string): Record<string, string | undefined> {
   const out: Record<string, string | undefined> = {}
-  for (const [key, value] of url.searchParams.entries()) {
+  if (!rawQuery) return out
+
+  let start = 0
+  for (let i = 0; i <= rawQuery.length; i += 1) {
+    if (i !== rawQuery.length && rawQuery.charCodeAt(i) !== 38) continue
+
+    const chunk = rawQuery.slice(start, i)
+    start = i + 1
+    if (!chunk) continue
+
+    const eq = chunk.indexOf('=')
+    if (eq === -1) {
+      out[decodeQueryComponent(chunk)] = ''
+      continue
+    }
+
+    const key = decodeQueryComponent(chunk.slice(0, eq))
+    const value = decodeQueryComponent(chunk.slice(eq + 1))
     out[key] = value
   }
+
   return out
 }
 
@@ -86,36 +119,70 @@ function parseBodyByType(buffer: Buffer, contentType: string): unknown {
 }
 
 type CreateContextInput = {
+  host: string
+  rawQuery: string
   req: IncomingMessage
+  requestUrl: string
   res: ServerResponse
-  url: URL
   params: Record<string, string>
   env: Readonly<Record<string, string | undefined>>
   pathMethods: string[]
 }
 
 export function createContext(input: CreateContextInput): InternalStravixContext {
-  const { req, res, url, params, env, pathMethods } = input
-  const requestCookieHeader = normalizeHeaderValue(req.headers.cookie)
-  const requestCookies = parseCookieHeader(requestCookieHeader)
-
+  const { req, res, requestUrl, rawQuery, host, params, env, pathMethods } = input
   const responseCookies: string[] = []
   let bodyPromise: Promise<unknown> | null = null
-  let queryCache: Record<string, unknown> = initialQuery(url)
-  let headersCache: Record<string, unknown> = { ...normalizeHeaders(req.headers) }
-  let cookiesCache: Record<string, unknown> = { ...requestCookies }
+  let queryCache: Record<string, unknown> | null = null
+  let headersCache: Record<string, unknown> | null = null
+  let cookiesCache: Record<string, unknown> | null = null
+  let requestCookiesCache: Record<string, string> | null = null
+  let urlCache: URL | null = null
+
+  function getHeadersCache(): Record<string, unknown> {
+    if (!headersCache) {
+      headersCache = { ...normalizeHeaders(req.headers) }
+    }
+    return headersCache
+  }
+
+  function getQueryCache(): Record<string, unknown> {
+    if (!queryCache) {
+      queryCache = initialQuery(rawQuery)
+    }
+    return queryCache
+  }
+
+  function getCookiesCache(): Record<string, unknown> {
+    if (!cookiesCache) {
+      if (!requestCookiesCache) {
+        requestCookiesCache = parseCookieHeader(normalizeHeaderValue(req.headers.cookie))
+      }
+      cookiesCache = { ...requestCookiesCache }
+    }
+    return cookiesCache
+  }
+
+  const param = ((name?: string, defaultValue?: unknown): unknown => {
+    if (!name) return svx.params
+    const value = svx.params[String(name)]
+    return value === undefined ? defaultValue : value
+  }) as StravixContext['param']
 
   const svx: InternalStravixContext = {
     req,
     res,
-    url,
+    url: null as unknown as URL,
     params,
     env,
     state: {},
 
+    param,
+
     query(name?: string, defaultValue?: unknown): unknown {
-      if (!name) return queryCache
-      const value = queryCache[name]
+      const cached = getQueryCache()
+      if (!name) return cached
+      const value = cached[name]
       return value === undefined ? defaultValue : value
     },
 
@@ -131,13 +198,14 @@ export function createContext(input: CreateContextInput): InternalStravixContext
     },
 
     headers(name?: string): unknown {
-      if (!name) return headersCache
-      return headersCache[String(name).toLowerCase()]
+      const cached = getHeadersCache()
+      if (!name) return cached
+      return cached[String(name).toLowerCase()]
     },
 
     cookies: {
       get(name: string) {
-        const value = cookiesCache[name]
+        const value = getCookiesCache()[name]
         return typeof value === 'string' ? value : undefined
       },
       set(name: string, value: string, options: CookieOptions = {}) {
@@ -153,7 +221,10 @@ export function createContext(input: CreateContextInput): InternalStravixContext
         )
       },
       all() {
-        return Object.freeze({ ...requestCookies })
+        if (!requestCookiesCache) {
+          requestCookiesCache = parseCookieHeader(normalizeHeaderValue(req.headers.cookie))
+        }
+        return Object.freeze({ ...requestCookiesCache })
       }
     },
 
@@ -167,20 +238,50 @@ export function createContext(input: CreateContextInput): InternalStravixContext
       return this
     },
 
-    json(value, status = 200) {
+    redirect(location, status = 302) {
       if (!res.headersSent) {
         res.statusCode = status
+        res.setHeader('Location', encodeURI(location))
+      }
+
+      this._commitCookies()
+      res.end()
+      return undefined
+    },
+
+    cookie(name, value, options = {}) {
+      this.cookies.set(name, value, options)
+      return this
+    },
+
+    clearCookie(name, options = {}) {
+      this.cookies.delete(name, options)
+      return this
+    },
+
+    json(value, status) {
+      if (!res.headersSent) {
+        res.statusCode = status ?? res.statusCode ?? 200
         res.setHeader('Content-Type', 'application/json; charset=utf-8')
       }
 
       this._commitCookies()
+      if (value && typeof value === 'object' && Object.isFrozen(value)) {
+        const body = getStaticJsonBuffer(value as object)
+        if (!res.headersSent) {
+          res.setHeader('Content-Length', String(body.length))
+        }
+        res.end(body)
+        return undefined
+      }
+
       res.end(JSON.stringify(value))
       return undefined
     },
 
-    text(value, status = 200) {
+    text(value, status) {
       if (!res.headersSent) {
-        res.statusCode = status
+        res.statusCode = status ?? res.statusCode ?? 200
         res.setHeader('Content-Type', 'text/plain; charset=utf-8')
       }
 
@@ -189,9 +290,9 @@ export function createContext(input: CreateContextInput): InternalStravixContext
       return undefined
     },
 
-    html(value, status = 200) {
+    html(value, status) {
       if (!res.headersSent) {
-        res.statusCode = status
+        res.statusCode = status ?? res.statusCode ?? 200
         res.setHeader('Content-Type', 'text/html; charset=utf-8')
       }
 
@@ -278,6 +379,17 @@ export function createContext(input: CreateContextInput): InternalStravixContext
       bodyPromise = Promise.resolve(value)
     }
   }
+
+  Object.defineProperty(svx, 'url', {
+    enumerable: true,
+    configurable: false,
+    get() {
+      if (!urlCache) {
+        urlCache = new URL(requestUrl, `http://${host}`)
+      }
+      return urlCache
+    }
+  })
 
   return svx
 }

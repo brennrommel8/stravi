@@ -1,19 +1,20 @@
-import type { RouteFn, RouteMatch } from './types.js'
-
-type RoutePart =
-  | { type: 'static'; value: string }
-  | { type: 'param'; key: string }
-
-type RouteRecord = {
-  method: string
-  path: string
-  parts: RoutePart[]
-  handlers: RouteFn[]
-}
+import type { InternalStravixContext, RouteExecutor, RouteFn, RouteMatch } from './types.js'
 
 function splitSegments(pathname: string): string[] {
   if (pathname === '/') return []
-  return pathname.split('/').filter(Boolean)
+
+  const segments: string[] = []
+  let start = 1
+
+  for (let i = 1; i <= pathname.length; i += 1) {
+    if (i !== pathname.length && pathname.charCodeAt(i) !== 47) continue
+    if (i > start) {
+      segments.push(pathname.slice(start, i))
+    }
+    start = i + 1
+  }
+
+  return segments
 }
 
 export function normalizePath(pathname: string): string {
@@ -22,91 +23,158 @@ export function normalizePath(pathname: string): string {
   return trimmed || '/'
 }
 
-function createParts(pathname: string): RoutePart[] {
-  const segments = splitSegments(normalizePath(pathname))
-
-  return segments.map((segment) => {
-    if (!segment.startsWith(':')) {
-      return { type: 'static', value: segment }
-    }
-
-    const key = segment.slice(1)
-    if (!key) throw new Error(`Invalid route param in path: ${pathname}`)
-    return { type: 'param', key }
-  })
+type TrieNode = {
+  staticChildren: Map<string, TrieNode>
+  paramChild: TrieNode | null
+  paramKey: string | null
+  handlers: RouteFn[] | null
+  executor: RouteExecutor<InternalStravixContext> | null
 }
 
-function matchParts(parts: RoutePart[], pathSegments: string[]): Record<string, string> | null {
-  if (parts.length !== pathSegments.length) return null
+function createNode(): TrieNode {
+  return {
+    staticChildren: new Map(),
+    paramChild: null,
+    paramKey: null,
+    handlers: null,
+    executor: null
+  }
+}
 
-  const params: Record<string, string> = {}
-
-  for (let i = 0; i < parts.length; i += 1) {
-    const part = parts[i]
-    const segment = pathSegments[i]
-
-    if (part.type === 'static') {
-      if (part.value !== segment) return null
-      continue
-    }
-
-    params[part.key] = decodeURIComponent(segment)
+function findMatch(
+  node: TrieNode,
+  pathSegments: string[],
+  index: number,
+  params: Record<string, string>
+): RouteMatch | null {
+  if (index === pathSegments.length) {
+    if (!node.handlers) return null
+    return { handlers: node.handlers, executor: node.executor || undefined, params: { ...params } }
   }
 
-  return params
+  const segment = pathSegments[index]
+  const staticChild = node.staticChildren.get(segment)
+  if (staticChild) {
+    const hit = findMatch(staticChild, pathSegments, index + 1, params)
+    if (hit) return hit
+  }
+
+  if (node.paramChild && node.paramKey) {
+    params[node.paramKey] = decodeURIComponent(segment)
+    const hit = findMatch(node.paramChild, pathSegments, index + 1, params)
+    delete params[node.paramKey]
+    if (hit) return hit
+  }
+
+  return null
 }
 
 export class Router {
-  private readonly routes: RouteRecord[] = []
+  private readonly methodRoots = new Map<string, TrieNode>()
+  private readonly staticRoutes = new Map<
+    string,
+    Map<string, { handlers: RouteFn[]; executor: RouteExecutor<InternalStravixContext> }>
+  >()
+  private readonly methods = new Set<string>()
 
-  add(method: string, path: string, handlers: RouteFn[]): void {
-    if (!path.startsWith('/')) {
-      throw new Error(`Route path must start with '/': ${path}`)
+  private rootFor(method: string): TrieNode {
+    let root = this.methodRoots.get(method)
+    if (!root) {
+      root = createNode()
+      this.methodRoots.set(method, root)
+    }
+    return root
+  }
+
+  add(
+    method: string,
+    path: string,
+    handlers: RouteFn[],
+    executor: RouteExecutor<InternalStravixContext>
+  ): void {
+    if (!path.startsWith('/')) throw new Error(`Route path must start with '/': ${path}`)
+
+    const normalizedPath = normalizePath(path)
+    const segments = splitSegments(normalizedPath)
+    if (!path.includes(':')) {
+      let staticMap = this.staticRoutes.get(method)
+      if (!staticMap) {
+        staticMap = new Map()
+        this.staticRoutes.set(method, staticMap)
+      }
+      if (!staticMap.has(normalizedPath)) {
+        staticMap.set(normalizedPath, { handlers, executor })
+      }
     }
 
-    this.routes.push({
-      method,
-      path: normalizePath(path),
-      parts: createParts(path),
-      handlers
-    })
+    const root = this.rootFor(method)
+    let node = root
+
+    for (const segment of segments) {
+      if (!segment.startsWith(':')) {
+        let child = node.staticChildren.get(segment)
+        if (!child) {
+          child = createNode()
+          node.staticChildren.set(segment, child)
+        }
+        node = child
+        continue
+      }
+
+      const key = segment.slice(1)
+      if (!key) throw new Error(`Invalid route param in path: ${path}`)
+
+      if (!node.paramChild) {
+        node.paramChild = createNode()
+        node.paramKey = key
+      }
+
+      node = node.paramChild
+    }
+
+    if (!node.handlers) {
+      node.handlers = handlers
+      node.executor = executor
+    }
+    this.methods.add(method)
   }
 
   match(method: string, pathname: string): RouteMatch | null {
     const normalized = normalizePath(pathname)
-    const pathSegments = splitSegments(normalized)
-
-    for (const route of this.routes) {
-      if (route.method !== method) continue
-      const params = matchParts(route.parts, pathSegments)
-      if (!params) continue
-      return { handlers: route.handlers, params }
+    const staticMap = this.staticRoutes.get(method)
+    const staticRoute = staticMap?.get(normalized)
+    if (staticRoute) {
+      return { handlers: staticRoute.handlers, executor: staticRoute.executor, params: {} }
     }
 
-    return null
+    const root = this.methodRoots.get(method)
+    if (!root) return null
+
+    const pathSegments = splitSegments(normalized)
+    return findMatch(root, pathSegments, 0, {})
   }
 
   matchAnyPath(pathname: string): RouteMatch | null {
-    const normalized = normalizePath(pathname)
-    const pathSegments = splitSegments(normalized)
-
-    for (const route of this.routes) {
-      const params = matchParts(route.parts, pathSegments)
-      if (!params) continue
-      return { handlers: route.handlers, params }
+    for (const method of this.methods) {
+      const match = this.match(method, pathname)
+      if (match) return match
     }
-
     return null
   }
 
   methodsForPath(pathname: string): string[] {
     const normalized = normalizePath(pathname)
-    const pathSegments = splitSegments(normalized)
     const methods: string[] = []
 
-    for (const route of this.routes) {
-      const params = matchParts(route.parts, pathSegments)
-      if (params) methods.push(route.method)
+    for (const method of this.methods) {
+      const staticMap = this.staticRoutes.get(method)
+      if (staticMap?.has(normalized)) {
+        methods.push(method)
+        continue
+      }
+
+      const match = this.match(method, pathname)
+      if (match) methods.push(method)
     }
 
     return methods

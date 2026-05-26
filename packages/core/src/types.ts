@@ -104,6 +104,11 @@ export interface StravixContext<
   env: TEnv
   state: Record<string, unknown>
 
+  param(): TParams
+  param<K extends keyof TParams & string>(name: K): TParams[K]
+  param(name: string): string | undefined
+  param<K extends keyof TParams & string, TDefault>(name: K, defaultValue: TDefault): TParams[K] | TDefault
+  param<TDefault>(name: string, defaultValue: TDefault): string | TDefault
   query(name?: string, defaultValue?: unknown): unknown
   body(): Promise<TBody>
   headers(name?: string): unknown
@@ -112,6 +117,9 @@ export interface StravixContext<
 
   status(code: number): StravixContext<TParams, TQuery, TBody, THeaders, TCookies, TEnv>
   set(name: string, value: string): StravixContext<TParams, TQuery, TBody, THeaders, TCookies, TEnv>
+  redirect(location: string, status?: number): undefined
+  cookie(name: string, value: string, options?: CookieOptions): StravixContext<TParams, TQuery, TBody, THeaders, TCookies, TEnv>
+  clearCookie(name: string, options?: CookieOptions): StravixContext<TParams, TQuery, TBody, THeaders, TCookies, TEnv>
   json(value: unknown, status?: number): undefined
   text(value: string, status?: number): undefined
   html(value: string, status?: number): undefined
@@ -133,9 +141,12 @@ export type Next = () => Promise<unknown>
 export type Middleware<C extends StravixContext = StravixContext> = (svx: C, next?: Next) => MaybePromise<unknown>
 export type Handler<C extends StravixContext = StravixContext> = (svx: C, next?: Next) => MaybePromise<unknown>
 export type RouteFn<C extends StravixContext = StravixContext> = (svx: C, next?: Next) => MaybePromise<unknown>
+export type RouteExecutor<C extends StravixContext = StravixContext> = (svx: C) => MaybePromise<unknown>
+export type ErrorHandler<C extends StravixContext = StravixContext> = (error: unknown, svx: C) => MaybePromise<unknown>
 
 export interface RouteMatch {
   handlers: RouteFn[]
+  executor?: RouteExecutor<InternalStravixContext>
   params: Record<string, string>
 }
 
@@ -193,22 +204,40 @@ export type RouteWithoutSchemaArgs<
   TEnv extends Readonly<Record<string, string | undefined>>
 > = RouteHandlers<Path, undefined, TEnv>
 
-export type RouteMethod<TEnv extends Readonly<Record<string, string | undefined>>> = {
-  <Path extends string>(path: Path, ...handlers: RouteWithoutSchemaArgs<Path, TEnv>): Stravix<TEnv>
+export type RouteMethod<
+  TEnv extends Readonly<Record<string, string | undefined>>,
+  TReturn
+> = {
+  <Path extends string>(path: Path, ...handlers: RouteWithoutSchemaArgs<Path, TEnv>): TReturn
   <Path extends string, Schema extends RouteSchema>(
     path: Path,
     ...args: RouteWithSchemaArgs<Path, Schema, TEnv>
-  ): Stravix<TEnv>
+  ): TReturn
+}
+
+export interface RouterInstance<TEnv extends Readonly<Record<string, string | undefined>>> {
+  use(...fns: RouteFn[]): RouterInstance<TEnv>
+  use(path: string, ...fns: RouteFn[]): RouterInstance<TEnv>
+  route(path: string, router: RouterInstance<TEnv>): RouterInstance<TEnv>
+  get: RouteMethod<TEnv, RouterInstance<TEnv>>
+  post: RouteMethod<TEnv, RouterInstance<TEnv>>
+  put: RouteMethod<TEnv, RouterInstance<TEnv>>
+  patch: RouteMethod<TEnv, RouterInstance<TEnv>>
+  delete: RouteMethod<TEnv, RouterInstance<TEnv>>
+  options: RouteMethod<TEnv, RouterInstance<TEnv>>
 }
 
 export interface StravixInstance<TEnv extends Readonly<Record<string, string | undefined>>> {
   use(...fns: RouteFn[]): StravixInstance<TEnv>
-  get: RouteMethod<TEnv>
-  post: RouteMethod<TEnv>
-  put: RouteMethod<TEnv>
-  patch: RouteMethod<TEnv>
-  delete: RouteMethod<TEnv>
-  options: RouteMethod<TEnv>
+  use(path: string, ...fns: RouteFn[]): StravixInstance<TEnv>
+  onError(handler: ErrorHandler): StravixInstance<TEnv>
+  route(path: string, router: RouterInstance<TEnv>): StravixInstance<TEnv>
+  get: RouteMethod<TEnv, StravixInstance<TEnv>>
+  post: RouteMethod<TEnv, StravixInstance<TEnv>>
+  put: RouteMethod<TEnv, StravixInstance<TEnv>>
+  patch: RouteMethod<TEnv, StravixInstance<TEnv>>
+  delete: RouteMethod<TEnv, StravixInstance<TEnv>>
+  options: RouteMethod<TEnv, StravixInstance<TEnv>>
   start(port?: number, host?: string): Server
   stop(): Promise<void>
 }

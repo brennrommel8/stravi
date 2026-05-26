@@ -1,10 +1,14 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { createContext } from './context.js'
-import { Router, normalizePath } from './router.js'
+import { HttpError } from './http-exception.js'
+import { pathMatchesPrefix, ensureAbsolutePath, Router as RouteGroup } from './router-builder.js'
+import { Router as InternalRouter, normalizePath } from './router.js'
 import { ValidationError } from '../../validator/src/index.js'
 import type {
+  ErrorHandler,
   EnvShape,
   Handler,
+  RouteExecutor,
   StravixOptions,
   InternalStravixContext,
   RouteFn,
@@ -91,11 +95,103 @@ function makeValidationMiddleware(schema: RouteSchema): RouteFn<InternalStravixC
   }
 }
 
+type MiddlewareEntry = {
+  fn: RouteFn
+  path: string
+}
+
+function parseRequestTarget(target: string): { pathname: string; rawQuery: string } {
+  if (!target) return { pathname: '/', rawQuery: '' }
+
+  if (target.charCodeAt(0) !== 47) {
+    const url = new URL(target)
+    return {
+      pathname: normalizePath(url.pathname),
+      rawQuery: url.search.length > 1 ? url.search.slice(1) : ''
+    }
+  }
+
+  const hashIndex = target.indexOf('#')
+  const endIndex = hashIndex === -1 ? target.length : hashIndex
+  const queryIndex = target.indexOf('?')
+
+  if (queryIndex === -1 || queryIndex > endIndex) {
+    const pathnameOnly = target.slice(0, endIndex) || '/'
+    return { pathname: normalizePath(pathnameOnly), rawQuery: '' }
+  }
+
+  const pathname = target.slice(0, queryIndex) || '/'
+  const rawQuery = target.slice(queryIndex + 1, endIndex)
+  return { pathname: normalizePath(pathname), rawQuery }
+}
+
+function compileRouteExecutor(stack: RouteFn[]): RouteExecutor<InternalStravixContext> {
+  const hasNextMiddleware = stack.some((fn) => fn.length >= 2)
+
+  // Fast path: plain handlers only, no next() middleware chain required.
+  if (!hasNextMiddleware) {
+    const handlers = stack as Handler[]
+    return async (svx: InternalStravixContext) => {
+      for (let i = 0; i < handlers.length; i += 1) {
+        const value = await handlers[i](svx)
+        if (value !== undefined) return value
+      }
+      return undefined
+    }
+  }
+
+  const steps: Array<(svx: InternalStravixContext) => Promise<unknown>> = new Array(stack.length + 1)
+  steps[stack.length] = async () => undefined
+
+  for (let i = stack.length - 1; i >= 0; i -= 1) {
+    const fn = stack[i]
+    const nextStep = steps[i + 1]
+
+    if (fn.length >= 2) {
+      steps[i] = async (svx: InternalStravixContext) => {
+        let called = false
+        return fn(svx, async () => {
+          if (called) throw new Error('next() called multiple times')
+          called = true
+          return nextStep(svx)
+        })
+      }
+      continue
+    }
+
+    const handler = fn as Handler
+    steps[i] = async (svx: InternalStravixContext) => {
+      const value = await handler(svx)
+      if (value !== undefined) return value
+      return nextStep(svx)
+    }
+  }
+
+  return steps[0]
+}
+
+function defaultErrorHandler(error: unknown, svx: InternalStravixContext): undefined {
+  if (error instanceof HttpError) {
+    const payload: Record<string, unknown> = { error: error.message }
+    if (error.details !== undefined) payload.details = error.details
+    return svx.json(payload, error.status)
+  }
+
+  const payload: Record<string, unknown> = { error: 'Internal Server Error' }
+  if (process.env.NODE_ENV === 'development' && error instanceof Error) {
+    payload.message = error.message
+  }
+
+  return svx.json(payload, 500)
+}
+
 export class Stravix<TEnv extends EnvShape = EnvShape> {
-  private readonly router = new Router()
-  private readonly middleware: RouteFn[] = []
+  private readonly router = new InternalRouter()
+  private readonly middleware: MiddlewareEntry[] = []
+  private readonly middlewareCache = new Map<string, RouteFn[]>()
   private server: Server | null = null
   private readonly env: TEnv
+  private errorHandler: ErrorHandler<InternalStravixContext> = defaultErrorHandler
 
   constructor(options: StravixOptions<Record<string, string>> = {}) {
     this.env = Object.freeze({
@@ -104,14 +200,46 @@ export class Stravix<TEnv extends EnvShape = EnvShape> {
     }) as TEnv
   }
 
-  use(...fns: RouteFn[]): this {
-    for (const fn of fns.flat()) {
+  use(...fns: RouteFn[]): this
+  use(path: string, ...fns: RouteFn[]): this
+  use(pathOrFn: string | RouteFn, ...fns: RouteFn[]): this {
+    let middlewarePath = '/'
+    let handlers: RouteFn[]
+
+    if (typeof pathOrFn === 'string') {
+      middlewarePath = ensureAbsolutePath(pathOrFn)
+      handlers = fns
+    } else {
+      handlers = [pathOrFn, ...fns]
+    }
+
+    if (handlers.length === 0) {
+      throw new Error('use() requires at least one middleware function')
+    }
+
+    for (const fn of handlers.flat()) {
       if (typeof fn !== 'function') {
         throw new TypeError('Middleware must be a function')
       }
-      this.middleware.push(fn)
+      this.middleware.push({ fn, path: middlewarePath })
+    }
+    this.middlewareCache.clear()
+
+    return this
+  }
+
+  onError(handler: ErrorHandler<InternalStravixContext>): this {
+    if (typeof handler !== 'function') {
+      throw new TypeError('Error handler must be a function')
     }
 
+    this.errorHandler = handler
+    return this
+  }
+
+  route(path: string, router: RouteGroup<TEnv>): this {
+    const mountPath = ensureAbsolutePath(path)
+    router.mount(this, mountPath)
     return this
   }
 
@@ -179,19 +307,27 @@ export class Stravix<TEnv extends EnvShape = EnvShape> {
     const routeHandlers: RouteFn[] = schema
       ? [makeValidationMiddleware(schema) as RouteFn, ...handlers]
       : handlers
-    this.router.add(method, path, routeHandlers)
+    this.router.add(method, path, routeHandlers, compileRouteExecutor(routeHandlers))
     return this
   }
 
   async handle(req: IncomingMessage, res: ServerResponse<IncomingMessage>): Promise<void> {
     const host = req.headers.host || 'localhost'
-    const url = new URL(req.url || '/', `http://${host}`)
-    const pathname = normalizePath(url.pathname)
+    const requestTarget = req.url || '/'
+    const { pathname, rawQuery } = parseRequestTarget(requestTarget)
     const method = (req.method || 'GET').toUpperCase()
 
     let match: RouteMatch | null = this.router.match(method, pathname)
-    const methodsForPath = this.router.methodsForPath(pathname)
-    const routeFound = methodsForPath.length > 0
+    let methodsForPath: string[]
+    let routeFound: boolean
+
+    if (match && method !== 'OPTIONS') {
+      methodsForPath = [method]
+      routeFound = true
+    } else {
+      methodsForPath = this.router.methodsForPath(pathname)
+      routeFound = methodsForPath.length > 0
+    }
 
     if (!match && method === 'OPTIONS' && routeFound) {
       const anyPathMatch = this.router.matchAnyPath(pathname)
@@ -204,30 +340,50 @@ export class Stravix<TEnv extends EnvShape = EnvShape> {
     }
 
     const svx = createContext({
+      host,
       req,
       res,
-      url,
+      requestUrl: requestTarget,
+      rawQuery,
       params: match?.params || {},
       env: this.env,
       pathMethods: methodsForPath
     })
 
-    const stack: RouteFn[] = [...this.middleware, ...(match?.handlers || [])]
-
+    let matchedMiddleware = this.middlewareCache.get(pathname)
+    if (!matchedMiddleware) {
+      matchedMiddleware = this.middleware
+        .filter((entry) => pathMatchesPrefix(pathname, entry.path))
+        .map((entry) => entry.fn)
+      this.middlewareCache.set(pathname, matchedMiddleware)
+    }
     try {
-      const result = await runPipeline(stack, svx)
+      let result: unknown
+      if (matchedMiddleware.length === 0 && match?.executor) {
+        result = await match.executor(svx)
+      } else {
+        const stack: RouteFn[] =
+          matchedMiddleware.length === 0
+            ? (match?.handlers || [])
+            : [...matchedMiddleware, ...(match?.handlers || [])]
+        result = await runPipeline(stack, svx)
+      }
       svx._sendAuto(result, routeFound)
     } catch (error) {
       if (res.writableEnded) return
+      try {
+        const handled = await this.errorHandler(error, svx)
+        if (res.writableEnded) return
+        if (handled !== undefined) {
+          svx._sendAuto(handled, true)
+          return
+        }
 
-      res.statusCode = 500
-      res.setHeader('Content-Type', 'application/json; charset=utf-8')
-      res.end(
-        JSON.stringify({
-          error: 'Internal Server Error',
-          message: process.env.NODE_ENV === 'development' && error instanceof Error ? error.message : undefined
-        })
-      )
+        defaultErrorHandler(error, svx)
+      } catch (handlerError) {
+        if (res.writableEnded) return
+        defaultErrorHandler(handlerError, svx)
+      }
     }
   }
 

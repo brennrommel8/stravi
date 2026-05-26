@@ -8,15 +8,16 @@
     "types": ["node"],
     "paths": {
       "stravix": ["./src/index.ts"],
-      "stravix/cors": ["./packages/cors/src/index.ts"],
-      "stravix/validator": ["./packages/validator/src/index.ts"]
+      "stravix/cors": ["./packages/middleware/cors/src/index.ts"],
+      "stravix/validator": ["./packages/validator/src/index.ts"],
+      "stravix/static": ["./packages/middleware/static/src/index.ts"],
+      "stravix/logger": ["./packages/middleware/logger/src/index.ts"],
+      "stravix/dev": ["./packages/dev/src/index.ts"]
     },
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true
   },
   "include": ["src/**/*.ts", "packages/**/*.ts", "examples/**/*.ts"],
-  "exclude": ["dist", "node_modules", "packages/create-stravix/template"]
+  "exclude": ["dist", "node_modules"]
 }
-
-
