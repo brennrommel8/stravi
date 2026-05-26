@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "strict": true,
+    "types": ["node"],
+    "paths": {
+      "stravix": ["./src/index.ts"],
+      "stravix/cors": ["./packages/cors/src/index.ts"],
+      "stravix/validator": ["./packages/validator/src/index.ts"]
+    },
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts", "packages/**/*.ts", "examples/**/*.ts"],
+  "exclude": ["dist", "node_modules", "packages/create-stravix/template"]
+}
+
+

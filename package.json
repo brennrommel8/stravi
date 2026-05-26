@@ -1,0 +1,44 @@
+{
+  "name": "stravix",
+  "version": "0.1.0",
+  "description": "Stravix lightweight Node.js backend framework",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./cors": {
+      "types": "./dist/packages/cors/src/index.d.ts",
+      "default": "./dist/packages/cors/src/index.js"
+    },
+    "./validator": {
+      "types": "./dist/packages/validator/src/index.d.ts",
+      "default": "./dist/packages/validator/src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^5.8.3",
+    "zod": "^4.4.3"
+  },
+  "keywords": [
+    "stravix",
+    "framework",
+    "node",
+    "http"
+  ],
+  "license": "MIT"
+}
+
+
