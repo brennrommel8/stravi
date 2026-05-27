@@ -1,6 +1,6 @@
 import process from 'node:process'
 import autocannon from 'autocannon'
-import { startBenchServer as startStravixServer } from './servers/stravix.js'
+import { startBenchServer as startStraviServer } from './servers/stravi.js'
 import { startBenchServer as startExpressServer } from './servers/express.js'
 import { startBenchServer as startHonoServer } from './servers/hono.js'
 
@@ -13,7 +13,7 @@ const defaults = {
 }
 
 const benchmarks = [
-  { name: 'stravix', port: 4301, start: startStravixServer },
+  { name: 'stravi', port: 4301, start: startStraviServer },
   { name: 'express', port: 4302, start: startExpressServer },
   { name: 'hono', port: 4303, start: startHonoServer }
 ]

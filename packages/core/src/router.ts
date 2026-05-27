@@ -1,4 +1,4 @@
-import type { InternalStravixContext, RouteExecutor, RouteFn, RouteMatch } from './types.js'
+import type { InternalStraviContext, RouteExecutor, RouteFn, RouteMatch } from './types.js'
 
 function splitSegments(pathname: string): string[] {
   if (pathname === '/') return []
@@ -28,7 +28,8 @@ type TrieNode = {
   paramChild: TrieNode | null
   paramKey: string | null
   handlers: RouteFn[] | null
-  executor: RouteExecutor<InternalStravixContext> | null
+  executor: RouteExecutor<InternalStraviContext> | null
+  routeKey: string | null
 }
 
 function createNode(): TrieNode {
@@ -37,7 +38,8 @@ function createNode(): TrieNode {
     paramChild: null,
     paramKey: null,
     handlers: null,
-    executor: null
+    executor: null,
+    routeKey: null
   }
 }
 
@@ -49,7 +51,12 @@ function findMatch(
 ): RouteMatch | null {
   if (index === pathSegments.length) {
     if (!node.handlers) return null
-    return { handlers: node.handlers, executor: node.executor || undefined, params: { ...params } }
+    return {
+      handlers: node.handlers,
+      executor: node.executor || undefined,
+      params: { ...params },
+      routeKey: node.routeKey || ''
+    }
   }
 
   const segment = pathSegments[index]
@@ -73,7 +80,7 @@ export class Router {
   private readonly methodRoots = new Map<string, TrieNode>()
   private readonly staticRoutes = new Map<
     string,
-    Map<string, { handlers: RouteFn[]; executor: RouteExecutor<InternalStravixContext> }>
+    Map<string, { handlers: RouteFn[]; executor: RouteExecutor<InternalStraviContext>; routeKey: string }>
   >()
   private readonly methods = new Set<string>()
 
@@ -90,11 +97,12 @@ export class Router {
     method: string,
     path: string,
     handlers: RouteFn[],
-    executor: RouteExecutor<InternalStravixContext>
+    executor: RouteExecutor<InternalStraviContext>
   ): void {
     if (!path.startsWith('/')) throw new Error(`Route path must start with '/': ${path}`)
 
     const normalizedPath = normalizePath(path)
+    const routeKey = `${method} ${normalizedPath}`
     const segments = splitSegments(normalizedPath)
     if (!path.includes(':')) {
       let staticMap = this.staticRoutes.get(method)
@@ -103,7 +111,7 @@ export class Router {
         this.staticRoutes.set(method, staticMap)
       }
       if (!staticMap.has(normalizedPath)) {
-        staticMap.set(normalizedPath, { handlers, executor })
+        staticMap.set(normalizedPath, { handlers, executor, routeKey })
       }
     }
 
@@ -135,6 +143,7 @@ export class Router {
     if (!node.handlers) {
       node.handlers = handlers
       node.executor = executor
+      node.routeKey = routeKey
     }
     this.methods.add(method)
   }
@@ -144,7 +153,12 @@ export class Router {
     const staticMap = this.staticRoutes.get(method)
     const staticRoute = staticMap?.get(normalized)
     if (staticRoute) {
-      return { handlers: staticRoute.handlers, executor: staticRoute.executor, params: {} }
+      return {
+        handlers: staticRoute.handlers,
+        executor: staticRoute.executor,
+        params: {},
+        routeKey: staticRoute.routeKey
+      }
     }
 
     const root = this.methodRoots.get(method)

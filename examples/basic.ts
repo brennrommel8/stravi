@@ -1,14 +1,14 @@
-import { Stravix } from 'stravix'
-import cors from 'stravix/cors'
-import v from 'stravix/validator'
+import { Stravi } from 'stravi'
+import cors from 'stravi/cors'
+import v from 'stravi/validator'
 
-const app = new Stravix()
+const app = new Stravi()
 
 app.use(cors())
 
-app.get('/', (svx) => {
-  return svx.json({
-    message: 'Hello Stravix'
+app.get('/', (sc) => {
+  return sc.json({
+    message: 'Hello Stravi'
   })
 })
 
@@ -18,10 +18,10 @@ app.post(
     params: v.object({ id: v.string() }),
     body: v.object({ name: v.string().min(2) })
   },
-  async (svx) => {
-    const body = await svx.body()
-    return svx.json({
-      id: svx.params.id,
+  async (sc) => {
+    const body = await sc.body()
+    return sc.json({
+      id: sc.params.id,
       name: body.name
     })
   }

@@ -1,8 +1,8 @@
-import { Stravix } from '../../dist/src/index.js'
+import { Stravi } from '../../dist/src/index.js'
 import { pathToFileURL } from 'node:url'
 
 const payload = Object.freeze({
-  framework: 'stravix',
+  framework: 'stravi',
   ok: true,
   message: 'benchmark'
 })
@@ -10,10 +10,10 @@ const payload = Object.freeze({
 export async function startBenchServer(options = {}) {
   const port = Number(options.port || process.env.BENCH_PORT || 4301)
   const host = options.host || process.env.BENCH_HOST || '127.0.0.1'
-  const app = new Stravix()
+  const app = new Stravi()
 
-  app.get('/json', (svx) => svx.json(payload))
-  app.get('/text', (svx) => svx.text('ok'))
+  app.get('/json', (sc) => sc.json(payload))
+  app.get('/text', (sc) => sc.text('ok'))
 
   const server = app.start(port, host)
   await new Promise((resolve) => {

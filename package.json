@@ -1,7 +1,7 @@
 {
-  "name": "stravix",
+  "name": "stravi",
   "version": "1.0.0",
-  "description": "Stravix lightweight Node.js backend framework",
+  "description": "Stravi lightweight Node.js backend framework",
   "type": "module",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
@@ -26,12 +26,16 @@
       "types": "./dist/packages/middleware/logger/src/index.d.ts",
       "default": "./dist/packages/middleware/logger/src/index.js"
     },
+    "./security": {
+      "types": "./dist/packages/middleware/security/src/index.d.ts",
+      "default": "./dist/packages/middleware/security/src/index.js"
+    },
     "./dev": {
       "default": "./dist/packages/dev/src/index.js"
     }
   },
   "bin": {
-    "stravix-dev": "./dist/packages/dev/src/index.js"
+    "stravi-dev": "./dist/packages/dev/src/index.js"
   },
   "files": [
     "dist"
@@ -48,11 +52,13 @@
     "node": ">=18"
   },
   "dependencies": {
-    "tsx": "^4.20.6"
+    "tsx": "^4.20.6",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
-    "@types/node": "^25.9.1",
     "@hono/node-server": "^1.13.8",
+    "@types/node": "^25.9.1",
+    "@types/ws": "^8.18.1",
     "autocannon": "^8.0.0",
     "express": "^5.1.0",
     "hono": "^4.10.6",
@@ -60,7 +66,7 @@
     "zod": "^4.4.3"
   },
   "keywords": [
-    "stravix",
+    "stravi",
     "framework",
     "node",
     "http"

@@ -12,14 +12,14 @@ export type LoggerOptions = {
 export default function logger(options: LoggerOptions = {}): Middleware {
   const sink: Logger = options.logger || console
 
-  return async function loggerMiddleware(svx, next) {
+  return async function loggerMiddleware(sc, next) {
     const startedAt = process.hrtime.bigint()
-    const method = svx.req.method || 'GET'
-    const path = svx.url.pathname
+    const method = sc.req.method || 'GET'
+    const path = sc.path
 
-    svx.res.once('finish', () => {
+    sc.res.once('finish', () => {
       const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000
-      const status = svx.res.statusCode
+      const status = sc.res.statusCode
       sink.info(`${method} ${path} ${status} ${elapsedMs.toFixed(2)}ms`)
     })
 

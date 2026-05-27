@@ -8,8 +8,8 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 function printUsage() {
-  console.log('Usage: create-stravix <project-name>')
-  console.log('Example: npm create stravix@latest my-api')
+  console.log('Usage: create-stravi <project-name>')
+  console.log('Example: npm create stravi@latest my-api')
 }
 
 function detectPackageManager() {
@@ -89,7 +89,7 @@ async function run() {
 
   const nextSteps = getNextStepCommands()
 
-  console.log('\nStravix app created successfully.')
+  console.log('\nStravi app created successfully.')
   console.log(`\nNext steps:\n  cd ${projectName}\n  ${nextSteps.install}\n  ${nextSteps.dev}\n`)
 }
 

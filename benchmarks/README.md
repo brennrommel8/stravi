@@ -1,6 +1,6 @@
 # Benchmarks
 
-Compares Stravix vs Express vs Hono on equivalent endpoints using `autocannon`.
+Compares Stravi vs Express vs Hono on equivalent endpoints using `autocannon`.
 
 ## Run
 
@@ -23,6 +23,6 @@ node benchmarks/run.js --duration 20 --connections 200 --pipelining 10 --endpoin
 
 ## Notes
 
-- Stravix server uses local build output from `dist/`.
+- Stravi server uses local build output from `dist/`.
 - `npm run bench` runs `npm run build` first.
 - Keep the same machine and Node version for fair comparisons.

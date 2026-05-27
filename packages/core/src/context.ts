@@ -1,11 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { HttpError } from './http-exception.js'
 import type {
   CookieOptions,
   HeaderValue,
   HeadersInput,
-  InternalStravixContext,
+  InternalStraviContext,
   NormalizedHeaders,
-  StravixContext
+  StraviContext
 } from './types.js'
 
 const staticJsonCache = new WeakMap<object, Buffer>()
@@ -89,21 +90,70 @@ function initialQuery(rawQuery: string): Record<string, string | undefined> {
   return out
 }
 
-async function readBody(req: IncomingMessage): Promise<Buffer> {
+async function readBodyWithLimit(req: IncomingMessage, bodyLimit?: number): Promise<Buffer> {
+  if (bodyLimit != null && bodyLimit >= 0) {
+    const contentLength = req.headers['content-length']
+    const parsedContentLength =
+      typeof contentLength === 'string' ? Number.parseInt(contentLength, 10) : Number.NaN
+    if (Number.isFinite(parsedContentLength) && parsedContentLength > bodyLimit) {
+      throw new HttpError(413, 'Payload Too Large')
+    }
+  }
+
   const chunks: Buffer[] = []
+  let total = 0
 
   for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+    const nextChunk = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    total += nextChunk.length
+
+    if (bodyLimit != null && bodyLimit >= 0 && total > bodyLimit) {
+      throw new HttpError(413, 'Payload Too Large')
+    }
+
+    chunks.push(nextChunk)
   }
 
   return Buffer.concat(chunks)
 }
 
-function parseBodyByType(buffer: Buffer, contentType: string): unknown {
+function formDataToObject(formData: FormData): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+
+  for (const [key, value] of formData.entries()) {
+    const current = out[key]
+
+    if (current === undefined) {
+      out[key] = value
+      continue
+    }
+
+    if (Array.isArray(current)) {
+      current.push(value)
+      continue
+    }
+
+    out[key] = [current, value]
+  }
+
+  return out
+}
+
+async function parseBodyByType(buffer: Buffer, contentType: string): Promise<unknown> {
   if (buffer.length === 0) return null
 
   if (contentType.includes('application/json')) {
     return JSON.parse(buffer.toString('utf8'))
+  }
+
+  if (contentType.includes('multipart/form-data')) {
+    const response = new Response(buffer, {
+      headers: {
+        'content-type': contentType
+      }
+    })
+    const formData = await response.formData()
+    return formDataToObject(formData)
   }
 
   if (contentType.includes('application/x-www-form-urlencoded')) {
@@ -119,7 +169,9 @@ function parseBodyByType(buffer: Buffer, contentType: string): unknown {
 }
 
 type CreateContextInput = {
+  bodyLimit?: number
   host: string
+  pathname: string
   rawQuery: string
   req: IncomingMessage
   requestUrl: string
@@ -129,8 +181,8 @@ type CreateContextInput = {
   pathMethods: string[]
 }
 
-export function createContext(input: CreateContextInput): InternalStravixContext {
-  const { req, res, requestUrl, rawQuery, host, params, env, pathMethods } = input
+export function createContext(input: CreateContextInput): InternalStraviContext {
+  const { req, res, requestUrl, rawQuery, host, pathname, params, env, pathMethods, bodyLimit } = input
   const responseCookies: string[] = []
   let bodyPromise: Promise<unknown> | null = null
   let queryCache: Record<string, unknown> | null = null
@@ -164,14 +216,15 @@ export function createContext(input: CreateContextInput): InternalStravixContext
   }
 
   const param = ((name?: string, defaultValue?: unknown): unknown => {
-    if (!name) return svx.params
-    const value = svx.params[String(name)]
+    if (!name) return sc.params
+    const value = sc.params[String(name)]
     return value === undefined ? defaultValue : value
-  }) as StravixContext['param']
+  }) as StraviContext['param']
 
-  const svx: InternalStravixContext = {
+  const sc: InternalStraviContext = {
     req,
     res,
+    path: pathname,
     url: null as unknown as URL,
     params,
     env,
@@ -189,7 +242,7 @@ export function createContext(input: CreateContextInput): InternalStravixContext
     body() {
       if (bodyPromise) return bodyPromise
 
-      bodyPromise = readBody(req).then((buffer) => {
+      bodyPromise = readBodyWithLimit(req, bodyLimit).then((buffer) => {
         const contentType = (normalizeHeaderValue(req.headers['content-type']) || '').toLowerCase()
         return parseBodyByType(buffer, contentType)
       })
@@ -380,7 +433,7 @@ export function createContext(input: CreateContextInput): InternalStravixContext
     }
   }
 
-  Object.defineProperty(svx, 'url', {
+  Object.defineProperty(sc, 'url', {
     enumerable: true,
     configurable: false,
     get() {
@@ -391,7 +444,7 @@ export function createContext(input: CreateContextInput): InternalStravixContext
     }
   })
 
-  return svx
+  return sc
 }
 
 

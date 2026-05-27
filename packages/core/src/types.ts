@@ -1,4 +1,5 @@
 import type { IncomingHttpHeaders, IncomingMessage, Server, ServerResponse } from 'node:http'
+import type { RawData, WebSocket as WsWebSocket } from 'ws'
 
 export type MaybePromise<T> = T | Promise<T>
 export type HeaderValue = string | undefined
@@ -89,7 +90,7 @@ type InferSchemaCookies<Schema extends RouteSchema | undefined> =
       : DefaultCookies
     : DefaultCookies
 
-export interface StravixContext<
+export interface StraviContext<
   TParams extends Record<string, string> = Record<string, string>,
   TQuery extends Record<string, unknown> = DefaultQuery,
   TBody = unknown,
@@ -99,6 +100,7 @@ export interface StravixContext<
 > {
   req: IncomingMessage
   res: ServerResponse
+  path: string
   url: URL
   params: TParams
   env: TEnv
@@ -115,17 +117,17 @@ export interface StravixContext<
 
   cookies: CookieStore<TCookies>
 
-  status(code: number): StravixContext<TParams, TQuery, TBody, THeaders, TCookies, TEnv>
-  set(name: string, value: string): StravixContext<TParams, TQuery, TBody, THeaders, TCookies, TEnv>
+  status(code: number): StraviContext<TParams, TQuery, TBody, THeaders, TCookies, TEnv>
+  set(name: string, value: string): StraviContext<TParams, TQuery, TBody, THeaders, TCookies, TEnv>
   redirect(location: string, status?: number): undefined
-  cookie(name: string, value: string, options?: CookieOptions): StravixContext<TParams, TQuery, TBody, THeaders, TCookies, TEnv>
-  clearCookie(name: string, options?: CookieOptions): StravixContext<TParams, TQuery, TBody, THeaders, TCookies, TEnv>
+  cookie(name: string, value: string, options?: CookieOptions): StraviContext<TParams, TQuery, TBody, THeaders, TCookies, TEnv>
+  clearCookie(name: string, options?: CookieOptions): StraviContext<TParams, TQuery, TBody, THeaders, TCookies, TEnv>
   json(value: unknown, status?: number): undefined
   text(value: string, status?: number): undefined
   html(value: string, status?: number): undefined
 }
 
-export interface InternalStravixContext extends StravixContext {
+export interface InternalStraviContext extends StraviContext {
   _commitCookies(): void
   _sendAuto(value: unknown, routeFound: boolean): void
   _allowedMethods(): string[]
@@ -138,16 +140,50 @@ export interface InternalStravixContext extends StravixContext {
 
 export type Next = () => Promise<unknown>
 
-export type Middleware<C extends StravixContext = StravixContext> = (svx: C, next?: Next) => MaybePromise<unknown>
-export type Handler<C extends StravixContext = StravixContext> = (svx: C, next?: Next) => MaybePromise<unknown>
-export type RouteFn<C extends StravixContext = StravixContext> = (svx: C, next?: Next) => MaybePromise<unknown>
-export type RouteExecutor<C extends StravixContext = StravixContext> = (svx: C) => MaybePromise<unknown>
-export type ErrorHandler<C extends StravixContext = StravixContext> = (error: unknown, svx: C) => MaybePromise<unknown>
+export type Middleware<C extends StraviContext = StraviContext> = (sc: C, next?: Next) => MaybePromise<unknown>
+export type Handler<C extends StraviContext = StraviContext> = (sc: C, next?: Next) => MaybePromise<unknown>
+export type RouteFn<C extends StraviContext = StraviContext> = (sc: C, next?: Next) => MaybePromise<unknown>
+export type RouteExecutor<C extends StraviContext = StraviContext> = (sc: C) => MaybePromise<unknown>
+export type ErrorHandler<C extends StraviContext = StraviContext> = (error: unknown, sc: C) => MaybePromise<unknown>
+
+export interface StraviWebSocket {
+  readonly raw: WsWebSocket
+  readonly readyState: number
+  json(value: unknown): void
+  send(data: string | Buffer | ArrayBufferLike | ArrayBufferView): void
+  close(code?: number, reason?: string): void
+}
+
+export interface StraviWebSocketContext<
+  TEnv extends Readonly<Record<string, string | undefined>> = EnvShape
+> {
+  readonly req: IncomingMessage
+  readonly path: string
+  readonly url: URL
+  readonly query: Readonly<Record<string, string | undefined>>
+  readonly params: Readonly<Record<string, string>>
+  readonly env: TEnv
+  readonly state: Record<string, unknown>
+  readonly ws: StraviWebSocket
+  readonly clients: ReadonlySet<StraviWebSocket>
+  broadcast(data: string | Buffer | ArrayBufferLike | ArrayBufferView, includeSelf?: boolean): void
+  broadcastJson(value: unknown, includeSelf?: boolean): void
+}
+
+export interface StraviWebSocketHandler<
+  TEnv extends Readonly<Record<string, string | undefined>> = EnvShape
+> {
+  open?: (sc: StraviWebSocketContext<TEnv>) => MaybePromise<void>
+  message?: (sc: StraviWebSocketContext<TEnv>, data: RawData, isBinary: boolean) => MaybePromise<void>
+  close?: (sc: StraviWebSocketContext<TEnv>, code: number, reason: string) => MaybePromise<void>
+  error?: (sc: StraviWebSocketContext<TEnv>, error: Error) => MaybePromise<void>
+}
 
 export interface RouteMatch {
   handlers: RouteFn[]
-  executor?: RouteExecutor<InternalStravixContext>
+  executor?: RouteExecutor<InternalStraviContext>
   params: Record<string, string>
+  routeKey: string
 }
 
 export interface CorsOptions {
@@ -158,15 +194,16 @@ export interface CorsOptions {
   maxAge?: number
 }
 
-export type StravixOptions<TEnv extends Record<string, string> = Record<string, string>> = {
+export type StraviOptions<TEnv extends Record<string, string> = Record<string, string>> = {
   env?: TEnv
+  bodyLimit?: number
 }
 
 export type RouteContextFrom<
   Path extends string,
   Schema extends RouteSchema | undefined,
   TEnv extends Readonly<Record<string, string | undefined>>
-> = StravixContext<
+> = StraviContext<
   InferSchemaParams<Path, Schema>,
   InferSchemaQuery<Schema>,
   InferSchemaBody<Schema>,
@@ -219,6 +256,7 @@ export interface RouterInstance<TEnv extends Readonly<Record<string, string | un
   use(...fns: RouteFn[]): RouterInstance<TEnv>
   use(path: string, ...fns: RouteFn[]): RouterInstance<TEnv>
   route(path: string, router: RouterInstance<TEnv>): RouterInstance<TEnv>
+  ws(path: string, handler: StraviWebSocketHandler<TEnv>): RouterInstance<TEnv>
   get: RouteMethod<TEnv, RouterInstance<TEnv>>
   post: RouteMethod<TEnv, RouterInstance<TEnv>>
   put: RouteMethod<TEnv, RouterInstance<TEnv>>
@@ -227,17 +265,18 @@ export interface RouterInstance<TEnv extends Readonly<Record<string, string | un
   options: RouteMethod<TEnv, RouterInstance<TEnv>>
 }
 
-export interface StravixInstance<TEnv extends Readonly<Record<string, string | undefined>>> {
-  use(...fns: RouteFn[]): StravixInstance<TEnv>
-  use(path: string, ...fns: RouteFn[]): StravixInstance<TEnv>
-  onError(handler: ErrorHandler): StravixInstance<TEnv>
-  route(path: string, router: RouterInstance<TEnv>): StravixInstance<TEnv>
-  get: RouteMethod<TEnv, StravixInstance<TEnv>>
-  post: RouteMethod<TEnv, StravixInstance<TEnv>>
-  put: RouteMethod<TEnv, StravixInstance<TEnv>>
-  patch: RouteMethod<TEnv, StravixInstance<TEnv>>
-  delete: RouteMethod<TEnv, StravixInstance<TEnv>>
-  options: RouteMethod<TEnv, StravixInstance<TEnv>>
+export interface StraviInstance<TEnv extends Readonly<Record<string, string | undefined>>> {
+  use(...fns: RouteFn[]): StraviInstance<TEnv>
+  use(path: string, ...fns: RouteFn[]): StraviInstance<TEnv>
+  onError(handler: ErrorHandler): StraviInstance<TEnv>
+  route(path: string, router: RouterInstance<TEnv>): StraviInstance<TEnv>
+  ws(path: string, handler: StraviWebSocketHandler<TEnv>): StraviInstance<TEnv>
+  get: RouteMethod<TEnv, StraviInstance<TEnv>>
+  post: RouteMethod<TEnv, StraviInstance<TEnv>>
+  put: RouteMethod<TEnv, StraviInstance<TEnv>>
+  patch: RouteMethod<TEnv, StraviInstance<TEnv>>
+  delete: RouteMethod<TEnv, StraviInstance<TEnv>>
+  options: RouteMethod<TEnv, StraviInstance<TEnv>>
   start(port?: number, host?: string): Server
   stop(): Promise<void>
 }
@@ -247,6 +286,6 @@ export type HeadersInput = IncomingHttpHeaders
 
 export type EnvShape = Readonly<Record<string, string | undefined>>
 
-export type Stravix<TEnv extends Readonly<Record<string, string | undefined>> = EnvShape> = StravixInstance<TEnv>
+export type Stravi<TEnv extends Readonly<Record<string, string | undefined>> = EnvShape> = StraviInstance<TEnv>
 
 

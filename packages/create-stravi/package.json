@@ -1,10 +1,10 @@
 {
-  "name": "create-stravix",
+  "name": "create-stravi",
   "version": "1.0.1",
-  "description": "Scaffold a Stravix backend app",
+  "description": "Scaffold a Stravi backend app",
   "type": "module",
   "bin": {
-    "create-stravix": "./cli.js"
+    "create-stravi": "./cli.js"
   },
   "files": [
     "cli.js",
@@ -12,7 +12,7 @@
   ],
   "keywords": [
     "create",
-    "stravix",
+    "stravi",
     "scaffold"
   ],
   "license": "MIT",

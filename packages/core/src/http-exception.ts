@@ -14,4 +14,4 @@ export class HttpError extends Error {
 
 // Backward compatibility aliases
 export class HttpException extends HttpError {}
-export class StravixError extends HttpError {}
+export class StraviError extends HttpError {}

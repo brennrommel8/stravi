@@ -1,8 +1,8 @@
-import { Stravix } from 'stravix'
-import cors from 'stravix/cors'
+import { Stravi } from 'stravi'
+import cors from 'stravi/cors'
 import { z } from 'zod'
 
-const app = new Stravix()
+const app = new Stravi()
 
 app.use(cors())
 
@@ -13,12 +13,12 @@ app.post(
     query: z.object({ mode: z.enum(['view', 'edit']).optional() }),
     body: z.object({ name: z.string().min(2), age: z.number().int() })
   },
-  async (svx) => {
-    const body = await svx.body()
+  async (sc) => {
+    const body = await sc.body()
 
-    return svx.json({
-      id: svx.params.id,
-      mode: svx.query('mode'),
+    return sc.json({
+      id: sc.params.id,
+      mode: sc.query('mode'),
       name: body.name,
       age: body.age
     })

@@ -23,40 +23,40 @@ export default function cors(options: CorsOptions = {}): Middleware {
   const allowMethods = methods.join(', ')
   const allowHeaders = Array.isArray(headers) ? headers.join(', ') : headers
 
-  return async function corsMiddleware(svx, next) {
-    const requestOriginHeader = svx.headers('origin')
+  return async function corsMiddleware(sc, next) {
+    const requestOriginHeader = sc.headers('origin')
     const requestOrigin = typeof requestOriginHeader === 'string' ? requestOriginHeader : ''
 
     if (origin === '*') {
-      svx.set('Access-Control-Allow-Origin', '*')
+      sc.set('Access-Control-Allow-Origin', '*')
     } else if (requestOrigin && originAllowed(origin, requestOrigin)) {
-      svx.set('Access-Control-Allow-Origin', requestOrigin)
-      svx.set('Vary', 'Origin')
+      sc.set('Access-Control-Allow-Origin', requestOrigin)
+      sc.set('Vary', 'Origin')
     }
 
-    svx.set('Access-Control-Allow-Methods', allowMethods)
+    sc.set('Access-Control-Allow-Methods', allowMethods)
 
     if (allowHeaders) {
-      svx.set('Access-Control-Allow-Headers', allowHeaders)
+      sc.set('Access-Control-Allow-Headers', allowHeaders)
     } else {
-      const requestHeadersHeader = svx.headers('access-control-request-headers')
+      const requestHeadersHeader = sc.headers('access-control-request-headers')
       const requestHeaders = typeof requestHeadersHeader === 'string' ? requestHeadersHeader : undefined
       if (requestHeaders) {
-        svx.set('Access-Control-Allow-Headers', requestHeaders)
+        sc.set('Access-Control-Allow-Headers', requestHeaders)
       }
     }
 
     if (maxAge != null) {
-      svx.set('Access-Control-Max-Age', String(maxAge))
+      sc.set('Access-Control-Max-Age', String(maxAge))
     }
 
     if (credentials) {
-      svx.set('Access-Control-Allow-Credentials', 'true')
+      sc.set('Access-Control-Allow-Credentials', 'true')
     }
 
-    if (svx.req.method === 'OPTIONS') {
-      svx.status(204)
-      return svx.text('')
+    if (sc.req.method === 'OPTIONS') {
+      sc.status(204)
+      return sc.text('')
     }
 
     if (!next) return undefined

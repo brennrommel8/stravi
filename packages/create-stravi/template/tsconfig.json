@@ -4,7 +4,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "paths": {
-      "stravix": ["./node_modules/stravix/dist/src/index.d.ts", "../../../src/index.ts"]
+      "stravi": ["./node_modules/stravi/dist/src/index.d.ts", "../../../src/index.ts"]
     },
     "strict": true,
     "types": ["node"],

@@ -3,9 +3,10 @@ import type {
   RouteFn,
   RouterInstance,
   RouteSchema,
+  StraviWebSocketHandler,
   RouteWithSchemaArgs,
   RouteWithoutSchemaArgs,
-  StravixInstance
+  StraviInstance
 } from './types.js'
 import { normalizePath } from './router.js'
 
@@ -33,7 +34,7 @@ export function pathMatchesPrefix(pathname: string, prefix: string): boolean {
   return normalizedPath === normalizedPrefix || normalizedPath.startsWith(`${normalizedPrefix}/`)
 }
 
-type MountOperation<TEnv extends EnvShape> = (app: StravixInstance<TEnv>, prefix: string) => void
+type MountOperation<TEnv extends EnvShape> = (app: StraviInstance<TEnv>, prefix: string) => void
 
 export class Router<TEnv extends EnvShape = EnvShape> implements RouterInstance<TEnv> {
   private readonly operations: MountOperation<TEnv>[] = []
@@ -82,6 +83,19 @@ export class Router<TEnv extends EnvShape = EnvShape> implements RouterInstance<
     return this
   }
 
+  ws(path: string, handler: StraviWebSocketHandler<TEnv>): this {
+    if (typeof handler !== 'object' || handler === null) {
+      throw new TypeError('ws() requires a handler object')
+    }
+
+    const routePath = ensureAbsolutePath(path)
+    this.operations.push((app, prefix) => {
+      app.ws(joinPaths(prefix, routePath), handler)
+    })
+
+    return this
+  }
+
   get<Path extends string>(path: Path, ...handlers: RouteWithoutSchemaArgs<Path, TEnv>): this
   get<Path extends string, Schema extends RouteSchema>(path: Path, ...args: RouteWithSchemaArgs<Path, Schema, TEnv>): this
   get(path: string, ...args: unknown[]): this {
@@ -118,7 +132,7 @@ export class Router<TEnv extends EnvShape = EnvShape> implements RouterInstance<
     return this.addRoute('options', path, args)
   }
 
-  mount(app: StravixInstance<TEnv>, prefix = '/'): void {
+  mount(app: StraviInstance<TEnv>, prefix = '/'): void {
     const normalizedPrefix = ensureAbsolutePath(prefix)
     for (const operation of this.operations) {
       operation(app, normalizedPrefix)

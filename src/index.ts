@@ -1,5 +1,5 @@
-export { Stravix } from '../packages/core/src/stravix.js'
-export { HttpError, HttpException, StravixError } from '../packages/core/src/http-exception.js'
+export { Stravi } from '../packages/core/src/stravi.js'
+export { HttpError, HttpException, StraviError } from '../packages/core/src/http-exception.js'
 export { Router } from '../packages/core/src/router-builder.js'
 export { default as v, ValidationError } from '../packages/validator/src/index.js'
 export type {
@@ -11,8 +11,11 @@ export type {
   RouteFn,
   RouterInstance,
   RouteSchema,
-  StravixContext,
-  StravixOptions,
+  StraviContext,
+  StraviWebSocket,
+  StraviWebSocketContext,
+  StraviWebSocketHandler,
+  StraviOptions,
   Validator
 } from '../packages/core/src/types.js'
 

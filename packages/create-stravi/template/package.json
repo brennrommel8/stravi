@@ -1,13 +1,13 @@
 {
-  "name": "stravix-app",
+  "name": "Stravi-app",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "stravix-dev src/index.ts"
+    "dev": "stravi-dev src/index.ts"
   },
   "dependencies": {
-    "stravix": "latest"
+    "stravi": "latest"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",

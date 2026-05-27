@@ -52,14 +52,14 @@ export default function serveStatic(options: StaticOptions): Middleware {
   const indexFile = options.index || 'index.html'
   const fallthrough = options.fallthrough !== false
 
-  return async function staticMiddleware(svx, next) {
-    const method = (svx.req.method || 'GET').toUpperCase()
+  return async function staticMiddleware(sc, next) {
+    const method = (sc.req.method || 'GET').toUpperCase()
     if (method !== 'GET' && method !== 'HEAD') {
       if (!next) return undefined
       return next()
     }
 
-    const pathname = svx.url.pathname
+    const pathname = sc.url.pathname
     const isPrefixMatch =
       normalizedPrefix === '/' ||
       pathname === normalizedPrefix ||
@@ -80,46 +80,46 @@ export default function serveStatic(options: StaticOptions): Middleware {
     try {
       decodedPath = decodeURIComponent(relativePath)
     } catch {
-      return svx.json({ error: 'Bad Request' }, 400)
+      return sc.json({ error: 'Bad Request' }, 400)
     }
 
     const filePath = path.resolve(rootPath, decodedPath)
     if (!isSafePath(rootPath, filePath)) {
-      return svx.json({ error: 'Forbidden' }, 403)
+      return sc.json({ error: 'Forbidden' }, 403)
     }
 
     let fileStat
     try {
       fileStat = await stat(filePath)
     } catch {
-      if (!fallthrough) return svx.json({ error: 'Not Found' }, 404)
+      if (!fallthrough) return sc.json({ error: 'Not Found' }, 404)
       if (!next) return undefined
       return next()
     }
 
     if (!fileStat.isFile()) {
-      if (!fallthrough) return svx.json({ error: 'Not Found' }, 404)
+      if (!fallthrough) return sc.json({ error: 'Not Found' }, 404)
       if (!next) return undefined
       return next()
     }
 
-    if (!svx.res.headersSent) {
-      svx.res.statusCode = svx.res.statusCode || 200
-      svx.res.setHeader('Content-Type', contentTypeFor(filePath))
-      svx.res.setHeader('Content-Length', String(fileStat.size))
+    if (!sc.res.headersSent) {
+      sc.res.statusCode = sc.res.statusCode || 200
+      sc.res.setHeader('Content-Type', contentTypeFor(filePath))
+      sc.res.setHeader('Content-Length', String(fileStat.size))
 
       if (typeof options.maxAge === 'number') {
         const maxAge = Math.max(0, Math.floor(options.maxAge))
         const immutablePart = options.immutable ? ', immutable' : ''
-        svx.res.setHeader('Cache-Control', `public, max-age=${maxAge}${immutablePart}`)
+        sc.res.setHeader('Cache-Control', `public, max-age=${maxAge}${immutablePart}`)
       }
     }
 
-    const commitCookies = (svx as { _commitCookies?: () => void })._commitCookies
-    if (commitCookies) commitCookies.call(svx)
+    const commitCookies = (sc as { _commitCookies?: () => void })._commitCookies
+    if (commitCookies) commitCookies.call(sc)
 
     if (method === 'HEAD') {
-      svx.res.end()
+      sc.res.end()
       return undefined
     }
 
@@ -127,7 +127,7 @@ export default function serveStatic(options: StaticOptions): Middleware {
       const stream = createReadStream(filePath)
       stream.on('error', reject)
       stream.on('end', resolve)
-      stream.pipe(svx.res)
+      stream.pipe(sc.res)
     })
 
     return undefined

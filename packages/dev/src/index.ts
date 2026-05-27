@@ -4,8 +4,8 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 
 function printUsage() {
-  console.log('Usage: stravix-dev <entry-file> [-- <node-args>]')
-  console.log('Example: stravix-dev src/index.ts')
+  console.log('Usage: stravi-dev <entry-file> [-- <node-args>]')
+  console.log('Example: stravi-dev src/index.ts')
 }
 
 const args = process.argv.slice(2)
@@ -38,7 +38,7 @@ if (isTypeScriptEntry) {
 
 nodeArgs.push(entryPath, ...passthrough)
 
-console.log(`Stravix dev watching: ${entryArg}`)
+console.log(`Stravi dev watching: ${entryArg}`)
 
 const child = spawn(process.execPath, nodeArgs, {
   stdio: 'inherit',

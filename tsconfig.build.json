@@ -9,7 +9,7 @@
     "rootDir": "."
   },
   "include": ["src/**/*.ts", "packages/**/*.ts"],
-  "exclude": ["dist", "node_modules", "examples", "test", "packages/create-stravix/template"]
+  "exclude": ["dist", "node_modules", "examples", "test", "packages/create-stravi/template"]
 }
 
 
