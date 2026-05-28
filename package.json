@@ -1,6 +1,6 @@
 {
   "name": "stravi",
-  "version": "1.0.3",
+  "version": "0.0.1",
   "description": "Stravi lightweight Node.js backend framework",
   "type": "module",
   "main": "./dist/src/index.js",
