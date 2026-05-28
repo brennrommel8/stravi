@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { cp, mkdir, readFile, writeFile, access } from 'node:fs/promises'
+import { cp, mkdir, readFile, writeFile, access, rename } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -71,6 +71,12 @@ async function run() {
 
   await mkdir(targetDir, { recursive: true })
   await cp(templateDir, targetDir, { recursive: true })
+
+  const gitignorePath = path.join(targetDir, 'gitignore.txt')
+  const dotGitignorePath = path.join(targetDir, '.gitignore')
+  if ((await exists(gitignorePath)) && !(await exists(dotGitignorePath))) {
+    await rename(gitignorePath, dotGitignorePath)
+  }
 
   const packageJsonPath = path.join(targetDir, 'package.json')
   const packageJsonRaw = await readFile(packageJsonPath, 'utf8')

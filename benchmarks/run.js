@@ -1,8 +1,5 @@
 import process from 'node:process'
 import autocannon from 'autocannon'
-import { startBenchServer as startStraviServer } from './servers/stravi.js'
-import { startBenchServer as startExpressServer } from './servers/express.js'
-import { startBenchServer as startHonoServer } from './servers/hono.js'
 
 const defaults = {
   duration: 15,
@@ -13,9 +10,9 @@ const defaults = {
 }
 
 const benchmarks = [
-  { name: 'stravi', port: 4301, start: startStraviServer },
-  { name: 'express', port: 4302, start: startExpressServer },
-  { name: 'hono', port: 4303, start: startHonoServer }
+  { name: 'stravi', port: 4301, module: './servers/stravi.js' },
+  { name: 'express', port: 4302, module: './servers/express.js' },
+  { name: 'hono', port: 4303, module: './servers/hono.js' }
 ]
 
 function readArg(name, fallback) {
@@ -62,6 +59,23 @@ function runAutocannon(url, options) {
   })
 }
 
+function isMissingDependencyError(error) {
+  return Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'ERR_MODULE_NOT_FOUND')
+}
+
+async function resolveStartServer(entry) {
+  try {
+    const mod = await import(entry.module)
+    return mod.startBenchServer
+  } catch (error) {
+    if (!isMissingDependencyError(error)) throw error
+    console.warn(
+      `Skipping ${entry.name}: missing dependency. Run "npm run bench:deps" to install optional benchmark packages.`
+    )
+    return null
+  }
+}
+
 function printSummary(results) {
   console.log('\nBenchmark Summary')
   console.log('framework  req/s(avg)  latency(ms avg)  latency p99(ms)  throughput(MB/s)  errors  timeouts')
@@ -89,10 +103,13 @@ async function main() {
   const results = []
 
   for (const entry of benchmarks) {
+    const start = await resolveStartServer(entry)
+    if (!start) continue
+
     const rounds = []
 
     for (let i = 0; i < options.rounds; i += 1) {
-      const server = await entry.start({ port: entry.port, host: '127.0.0.1' })
+      const server = await start({ port: entry.port, host: '127.0.0.1' })
       const url = `http://127.0.0.1:${entry.port}${options.endpoint}`
 
       try {
@@ -122,6 +139,10 @@ async function main() {
       errors: median(rounds.map((row) => row.errors)),
       timeouts: median(rounds.map((row) => row.timeouts))
     })
+  }
+
+  if (results.length === 0) {
+    throw new Error('No benchmark targets available. Install optional dependencies via "npm run bench:deps".')
   }
 
   printSummary(results)

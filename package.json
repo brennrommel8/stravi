@@ -1,6 +1,6 @@
 {
   "name": "stravi",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "Stravi lightweight Node.js backend framework",
   "type": "module",
   "main": "./dist/src/index.js",
@@ -35,7 +35,7 @@
     }
   },
   "bin": {
-    "stravi-dev": "./dist/packages/dev/src/index.js"
+    "stravi-dev": "dist/packages/dev/src/index.js"
   },
   "files": [
     "dist"
@@ -45,6 +45,7 @@
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test",
+    "bench:deps": "npm install --no-save express hono @hono/node-server",
     "bench": "npm run build && node benchmarks/run.js",
     "bench:quick": "npm run build && node benchmarks/run.js --duration 10 --connections 50 --pipelining 1"
   },
@@ -56,12 +57,9 @@
     "ws": "^8.21.0"
   },
   "devDependencies": {
-    "@hono/node-server": "^1.13.8",
     "@types/node": "^25.9.1",
     "@types/ws": "^8.18.1",
     "autocannon": "^8.0.0",
-    "express": "^5.1.0",
-    "hono": "^4.10.6",
     "typescript": "^5.8.3",
     "zod": "^4.4.3"
   },

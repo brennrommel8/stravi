@@ -1,6 +1,6 @@
 {
   "name": "create-stravi",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "Scaffold a Stravi backend app",
   "type": "module",
   "bin": {
