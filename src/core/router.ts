@@ -1,5 +1,7 @@
 import type { InternalStraviContext, RouteExecutor, RouteFn, RouteMatch } from './types.js'
 
+const emptyParams = Object.freeze({}) as Record<string, string>
+
 function splitSegments(pathname: string): string[] {
   if (pathname === '/') return []
 
@@ -43,6 +45,13 @@ function createNode(): TrieNode {
   }
 }
 
+type StaticRoute = {
+  handlers: RouteFn[]
+  executor: RouteExecutor<InternalStraviContext>
+  routeKey: string
+  match: RouteMatch
+}
+
 function findMatch(
   node: TrieNode,
   pathSegments: string[],
@@ -80,8 +89,9 @@ export class Router {
   private readonly methodRoots = new Map<string, TrieNode>()
   private readonly staticRoutes = new Map<
     string,
-    Map<string, { handlers: RouteFn[]; executor: RouteExecutor<InternalStraviContext>; routeKey: string }>
+    Map<string, StaticRoute>
   >()
+  private readonly staticPathMethods = new Map<string, string[]>()
   private readonly methods = new Set<string>()
 
   private rootFor(method: string): TrieNode {
@@ -111,7 +121,23 @@ export class Router {
         this.staticRoutes.set(method, staticMap)
       }
       if (!staticMap.has(normalizedPath)) {
-        staticMap.set(normalizedPath, { handlers, executor, routeKey })
+        staticMap.set(normalizedPath, {
+          handlers,
+          executor,
+          routeKey,
+          match: {
+            handlers,
+            executor,
+            params: emptyParams,
+            routeKey
+          }
+        })
+        const methodsForPath = this.staticPathMethods.get(normalizedPath)
+        if (!methodsForPath) {
+          this.staticPathMethods.set(normalizedPath, [method])
+        } else if (!methodsForPath.includes(method)) {
+          methodsForPath.push(method)
+        }
       }
     }
 
@@ -150,27 +176,31 @@ export class Router {
 
   match(method: string, pathname: string): RouteMatch | null {
     const normalized = normalizePath(pathname)
+    return this.matchNormalized(method, normalized)
+  }
+
+  matchNormalized(method: string, normalizedPath: string): RouteMatch | null {
     const staticMap = this.staticRoutes.get(method)
-    const staticRoute = staticMap?.get(normalized)
+    const staticRoute = staticMap?.get(normalizedPath)
     if (staticRoute) {
-      return {
-        handlers: staticRoute.handlers,
-        executor: staticRoute.executor,
-        params: {},
-        routeKey: staticRoute.routeKey
-      }
+      return staticRoute.match
     }
 
     const root = this.methodRoots.get(method)
     if (!root) return null
 
-    const pathSegments = splitSegments(normalized)
+    const pathSegments = splitSegments(normalizedPath)
     return findMatch(root, pathSegments, 0, {})
   }
 
   matchAnyPath(pathname: string): RouteMatch | null {
+    const normalized = normalizePath(pathname)
+    return this.matchAnyNormalizedPath(normalized)
+  }
+
+  matchAnyNormalizedPath(normalizedPath: string): RouteMatch | null {
     for (const method of this.methods) {
-      const match = this.match(method, pathname)
+      const match = this.matchNormalized(method, normalizedPath)
       if (match) return match
     }
     return null
@@ -178,16 +208,19 @@ export class Router {
 
   methodsForPath(pathname: string): string[] {
     const normalized = normalizePath(pathname)
+    return [...this.methodsForNormalizedPath(normalized)]
+  }
+
+  methodsForNormalizedPath(normalizedPath: string): string[] {
+    const staticMethods = this.staticPathMethods.get(normalizedPath)
+    if (staticMethods) {
+      return staticMethods
+    }
+
     const methods: string[] = []
 
     for (const method of this.methods) {
-      const staticMap = this.staticRoutes.get(method)
-      if (staticMap?.has(normalized)) {
-        methods.push(method)
-        continue
-      }
-
-      const match = this.match(method, pathname)
+      const match = this.matchNormalized(method, normalizedPath)
       if (match) methods.push(method)
     }
 

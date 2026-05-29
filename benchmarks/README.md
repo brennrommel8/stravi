@@ -1,12 +1,11 @@
 # Benchmarks
 
-Compares Stravi vs Express vs Hono on equivalent endpoints using `autocannon`.
+Runs a Stravi-only throughput benchmark using `autocannon`.
 
 ## Run
 
 ```bash
 npm install
-npm run bench:deps
 npm run bench
 ```
 
@@ -26,5 +25,4 @@ node benchmarks/run.js --duration 20 --connections 200 --pipelining 10 --endpoin
 
 - Stravi server uses local build output from `dist/`.
 - `npm run bench` runs `npm run build` first.
-- `express`, `hono`, and `@hono/node-server` are optional benchmark deps and are not part of the published runtime package metadata.
 - Keep the same machine and Node version for fair comparisons.

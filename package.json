@@ -45,7 +45,6 @@
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test",
-    "bench:deps": "npm install --no-save express hono @hono/node-server",
     "bench": "npm run build && node benchmarks/run.js",
     "bench:quick": "npm run build && node benchmarks/run.js --duration 10 --connections 50 --pipelining 1"
   },

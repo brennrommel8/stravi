@@ -8,22 +8,40 @@ const payload = Object.freeze({
 })
 
 export async function startBenchServer(options = {}) {
-  const port = Number(options.port || process.env.BENCH_PORT || 4301)
-  const host = options.host || process.env.BENCH_HOST || '127.0.0.1'
+  const port = Number(options.port ?? process.env.BENCH_PORT ?? 4301)
+  const host = options.host ?? process.env.BENCH_HOST ?? '127.0.0.1'
   const app = new Stravi()
 
   app.get('/json', (sc) => sc.json(payload))
   app.get('/text', (sc) => sc.text('ok'))
 
   const server = app.start(port, host)
-  await new Promise((resolve) => {
-    if (server.listening) resolve(undefined)
-    else server.once('listening', resolve)
+  await new Promise((resolve, reject) => {
+    if (server.listening) {
+      resolve(undefined)
+      return
+    }
+
+    const onListening = () => {
+      server.off('error', onError)
+      resolve(undefined)
+    }
+
+    const onError = (error) => {
+      server.off('listening', onListening)
+      reject(error)
+    }
+
+    server.once('listening', onListening)
+    server.once('error', onError)
   })
+
+  const address = server.address()
+  const resolvedPort = typeof address === 'object' && address ? address.port : port
 
   return {
     host,
-    port,
+    port: resolvedPort,
     async stop() {
       await app.stop()
     }

@@ -48,6 +48,14 @@ async function runPipeline(stack: RouteFn[], sc: InternalStraviContext): Promise
   return dispatch(0)
 }
 
+function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
+  return (
+    value !== null &&
+    (typeof value === 'object' || typeof value === 'function') &&
+    typeof (value as PromiseLike<T>).then === 'function'
+  )
+}
+
 function isSchemaInput(value: unknown): value is RouteSchema {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const candidate = value as Record<string, unknown>
@@ -213,9 +221,33 @@ function compileRouteExecutor(stack: RouteFn[]): RouteExecutor<InternalStraviCon
   // Fast path: plain handlers only, no next() middleware chain required.
   if (!hasNextMiddleware) {
     const handlers = stack as Handler[]
-    return async (sc: InternalStraviContext) => {
+    if (handlers.length === 1) {
+      const single = handlers[0]
+      return (sc: InternalStraviContext) => single(sc)
+    }
+
+    const resume = (sc: InternalStraviContext, index: number, pending: PromiseLike<unknown>): Promise<unknown> => {
+      return Promise.resolve(pending).then((resolved) => {
+        if (resolved !== undefined) return resolved
+
+        for (let i = index + 1; i < handlers.length; i += 1) {
+          const value = handlers[i](sc)
+          if (isPromiseLike(value)) {
+            return resume(sc, i, value)
+          }
+          if (value !== undefined) return value
+        }
+
+        return undefined
+      })
+    }
+
+    return (sc: InternalStraviContext) => {
       for (let i = 0; i < handlers.length; i += 1) {
-        const value = await handlers[i](sc)
+        const value = handlers[i](sc)
+        if (isPromiseLike(value)) {
+          return resume(sc, i, value)
+        }
         if (value !== undefined) return value
       }
       return undefined
@@ -272,7 +304,7 @@ export class Stravi<TEnv extends EnvShape = EnvShape> {
   private readonly wsRouter = new InternalRouter()
   private readonly middleware: MiddlewareEntry[] = []
   private readonly wsRoutes = new Map<string, WsRouteEntry<TEnv>>()
-  private readonly wsServer = new WebSocketServer({ noServer: true })
+  private wsServer: WebSocketServer | null = null
   private readonly wsContexts = new WeakMap<WebSocket, StraviWebSocketContext<TEnv>>()
   private readonly middlewareCache = new Map<string, RouteFn[]>()
   private readonly routeExecutorCache = new Map<string, RouteExecutor<InternalStraviContext>>()
@@ -432,13 +464,82 @@ export class Stravi<TEnv extends EnvShape = EnvShape> {
     return this
   }
 
-  async handle(req: IncomingMessage, res: ServerResponse<IncomingMessage>): Promise<void> {
+  private getWsServer(): WebSocketServer {
+    if (!this.wsServer) {
+      this.wsServer = new WebSocketServer({ noServer: true })
+    }
+    return this.wsServer
+  }
+
+  private finalizeResult(
+    sc: InternalStraviContext,
+    res: ServerResponse<IncomingMessage>,
+    result: unknown,
+    routeFound: boolean,
+    methodNotAllowed: boolean,
+    methodsForPath: string[]
+  ): void {
+    if (!res.writableEnded && methodNotAllowed && result === undefined) {
+      const allowedMethods = methodsForPath.includes('OPTIONS')
+        ? methodsForPath
+        : [...methodsForPath, 'OPTIONS']
+      sc.set('Allow', allowedMethods.join(', '))
+      sc.status(405)
+      sc._sendAuto({ error: 'Method Not Allowed' }, true)
+      return
+    }
+
+    sc._sendAuto(result, routeFound)
+  }
+
+  private handleError(
+    error: unknown,
+    sc: InternalStraviContext,
+    res: ServerResponse<IncomingMessage>
+  ): void {
+    if (res.writableEnded) return
+
+    try {
+      const handled = this.errorHandler(error, sc)
+      if (isPromiseLike(handled)) {
+        void Promise.resolve(handled)
+          .then((value) => {
+            if (res.writableEnded) return
+            if (value !== undefined) {
+              sc._sendAuto(value, true)
+              return
+            }
+
+            defaultErrorHandler(error, sc)
+          })
+          .catch((handlerError) => {
+            if (res.writableEnded) return
+            defaultErrorHandler(handlerError, sc)
+          })
+        return
+      }
+
+      if (res.writableEnded) return
+      if (handled !== undefined) {
+        sc._sendAuto(handled, true)
+        return
+      }
+
+      defaultErrorHandler(error, sc)
+    } catch (handlerError) {
+      if (res.writableEnded) return
+      defaultErrorHandler(handlerError, sc)
+    }
+  }
+
+  handle(req: IncomingMessage, res: ServerResponse<IncomingMessage>): void {
     const host = req.headers.host || 'localhost'
     const requestTarget = req.url || '/'
     const { pathname, rawQuery } = parseRequestTarget(requestTarget)
     const method = (req.method || 'GET').toUpperCase()
+    const hasMiddleware = this.middleware.length > 0
 
-    let match: RouteMatch | null = this.router.match(method, pathname)
+    let match: RouteMatch | null = this.router.matchNormalized(method, pathname)
     let methodsForPath: string[]
     let routeFound: boolean
 
@@ -446,12 +547,12 @@ export class Stravi<TEnv extends EnvShape = EnvShape> {
       methodsForPath = [method]
       routeFound = true
     } else {
-      methodsForPath = this.router.methodsForPath(pathname)
+      methodsForPath = this.router.methodsForNormalizedPath(pathname)
       routeFound = methodsForPath.length > 0
     }
 
     if (!match && method === 'OPTIONS' && routeFound) {
-      const anyPathMatch = this.router.matchAnyPath(pathname)
+      const anyPathMatch = this.router.matchAnyNormalizedPath(pathname)
       if (anyPathMatch) {
         match = {
           routeKey: `OPTIONS ${pathname} __middleware_only`,
@@ -476,22 +577,27 @@ export class Stravi<TEnv extends EnvShape = EnvShape> {
       pathMethods: methodsForPath
     })
 
-    const middlewareCacheKey = this.middlewareCacheKey(pathname, match?.routeKey)
-    let matchedMiddleware = this.middlewareCache.get(middlewareCacheKey)
-    if (!matchedMiddleware) {
-      matchedMiddleware = this.middleware
-        .filter((entry) => pathMatchesPrefix(pathname, entry.path))
-        .map((entry) => entry.fn)
-      setBoundedCache(this.middlewareCache, middlewareCacheKey, matchedMiddleware)
-    }
-
-    const routeExecutorCacheKey = match
-      ? `${this.middlewareVersion}|${middlewareCacheKey}|${match.routeKey}`
-      : null
-
     try {
       let result: unknown
-      if (routeExecutorCacheKey && match) {
+      if (!hasMiddleware) {
+        if (match?.executor) {
+          result = match.executor(sc)
+        }
+      } else {
+        const middlewareCacheKey = this.middlewareCacheKey(pathname, match?.routeKey)
+        let matchedMiddleware = this.middlewareCache.get(middlewareCacheKey)
+        if (!matchedMiddleware) {
+          matchedMiddleware = this.middleware
+            .filter((entry) => pathMatchesPrefix(pathname, entry.path))
+            .map((entry) => entry.fn)
+          setBoundedCache(this.middlewareCache, middlewareCacheKey, matchedMiddleware)
+        }
+
+        const routeExecutorCacheKey = match
+          ? `${this.middlewareVersion}|${middlewareCacheKey}|${match.routeKey}`
+          : null
+
+        if (routeExecutorCacheKey && match) {
         let executor = this.routeExecutorCache.get(routeExecutorCacheKey)
         if (!executor) {
           if (matchedMiddleware.length === 0 && match.executor) {
@@ -503,37 +609,26 @@ export class Stravi<TEnv extends EnvShape = EnvShape> {
           }
           setBoundedCache(this.routeExecutorCache, routeExecutorCacheKey, executor)
         }
-        result = await executor(sc)
-      } else if (matchedMiddleware.length > 0) {
-        result = await runPipeline(matchedMiddleware, sc)
+        result = executor(sc)
+        } else if (matchedMiddleware.length > 0) {
+          result = runPipeline(matchedMiddleware, sc)
+        }
       }
 
-      if (!res.writableEnded && methodNotAllowed && result === undefined) {
-        const allowedMethods = methodsForPath.includes('OPTIONS')
-          ? methodsForPath
-          : [...methodsForPath, 'OPTIONS']
-        sc.set('Allow', allowedMethods.join(', '))
-        sc.status(405)
-        sc._sendAuto({ error: 'Method Not Allowed' }, true)
+      if (isPromiseLike(result)) {
+        void Promise.resolve(result)
+          .then((value) => {
+            this.finalizeResult(sc, res, value, routeFound, methodNotAllowed, methodsForPath)
+          })
+          .catch((error) => {
+            this.handleError(error, sc, res)
+          })
         return
       }
 
-      sc._sendAuto(result, routeFound)
+      this.finalizeResult(sc, res, result, routeFound, methodNotAllowed, methodsForPath)
     } catch (error) {
-      if (res.writableEnded) return
-      try {
-        const handled = await this.errorHandler(error, sc)
-        if (res.writableEnded) return
-        if (handled !== undefined) {
-          sc._sendAuto(handled, true)
-          return
-        }
-
-        defaultErrorHandler(error, sc)
-      } catch (handlerError) {
-        if (res.writableEnded) return
-        defaultErrorHandler(handlerError, sc)
-      }
+      this.handleError(error, sc, res)
     }
   }
 
@@ -596,7 +691,7 @@ export class Stravi<TEnv extends EnvShape = EnvShape> {
       return
     }
 
-    this.wsServer.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+    this.getWsServer().handleUpgrade(req, socket, head, (ws: WebSocket) => {
       const host = req.headers.host || 'localhost'
       const url = new URL(requestTarget, `http://${host}`)
       const query = parseQueryObject(rawQuery)
@@ -690,9 +785,11 @@ export class Stravi<TEnv extends EnvShape = EnvShape> {
     this.server = createServer((req, res) => {
       void this.handle(req, res)
     })
-    this.server.on('upgrade', (req, socket, head) => {
-      this.handleUpgrade(req, socket, head)
-    })
+    if (this.wsRoutes.size > 0) {
+      this.server.on('upgrade', (req, socket, head) => {
+        this.handleUpgrade(req, socket, head)
+      })
+    }
 
     this.server.listen(port, host)
     return this.server

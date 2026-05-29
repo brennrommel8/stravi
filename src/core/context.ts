@@ -10,6 +10,10 @@ import type {
 } from './types.js'
 
 const staticJsonCache = new WeakMap<object, Buffer>()
+const jsonContentType = 'application/json; charset=utf-8'
+const textContentType = 'text/plain; charset=utf-8'
+const htmlContentType = 'text/html; charset=utf-8'
+const notFoundBuffer = Buffer.from(JSON.stringify({ error: 'Not Found' }))
 
 function getStaticJsonBuffer(value: object): Buffer {
   let cached = staticJsonCache.get(value)
@@ -64,6 +68,31 @@ function decodeQueryComponent(value: string): string {
   return decodeURIComponent(value.replace(/\+/g, ' '))
 }
 
+function findQueryValue(rawQuery: string, target: string): string | undefined {
+  if (!rawQuery || !target) return undefined
+
+  let start = 0
+  for (let i = 0; i <= rawQuery.length; i += 1) {
+    if (i !== rawQuery.length && rawQuery.charCodeAt(i) !== 38) continue
+
+    const chunk = rawQuery.slice(start, i)
+    start = i + 1
+    if (!chunk) continue
+
+    const eq = chunk.indexOf('=')
+    if (eq === -1) {
+      if (decodeQueryComponent(chunk) === target) return ''
+      continue
+    }
+
+    const key = decodeQueryComponent(chunk.slice(0, eq))
+    if (key !== target) continue
+    return decodeQueryComponent(chunk.slice(eq + 1))
+  }
+
+  return undefined
+}
+
 function initialQuery(rawQuery: string): Record<string, string | undefined> {
   const out: Record<string, string | undefined> = {}
   if (!rawQuery) return out
@@ -88,6 +117,30 @@ function initialQuery(rawQuery: string): Record<string, string | undefined> {
   }
 
   return out
+}
+
+function findCookieValue(headerValue: string | undefined, target: string): string | undefined {
+  if (!headerValue || !target) return undefined
+
+  let start = 0
+  while (start < headerValue.length) {
+    let end = headerValue.indexOf(';', start)
+    if (end === -1) end = headerValue.length
+
+    const part = headerValue.slice(start, end).trim()
+    if (part) {
+      const eq = part.indexOf('=')
+      const rawKey = eq === -1 ? part : part.slice(0, eq)
+      if (rawKey && decodeURIComponent(rawKey) === target) {
+        const rawValue = eq === -1 ? '' : part.slice(eq + 1)
+        return decodeURIComponent(rawValue)
+      }
+    }
+
+    start = end + 1
+  }
+
+  return undefined
 }
 
 async function readBodyWithLimit(req: IncomingMessage, bodyLimit?: number): Promise<Buffer> {
@@ -181,270 +234,316 @@ type CreateContextInput = {
   pathMethods: string[]
 }
 
-export function createContext(input: CreateContextInput): InternalStraviContext {
-  const { req, res, requestUrl, rawQuery, host, pathname, params, env, pathMethods, bodyLimit } = input
-  const responseCookies: string[] = []
-  let bodyPromise: Promise<unknown> | null = null
-  let queryCache: Record<string, unknown> | null = null
-  let headersCache: Record<string, unknown> | null = null
-  let cookiesCache: Record<string, unknown> | null = null
-  let requestCookiesCache: Record<string, string> | null = null
-  let urlCache: URL | null = null
-
-  function getHeadersCache(): Record<string, unknown> {
-    if (!headersCache) {
-      headersCache = { ...normalizeHeaders(req.headers) }
-    }
-    return headersCache
-  }
-
-  function getQueryCache(): Record<string, unknown> {
-    if (!queryCache) {
-      queryCache = initialQuery(rawQuery)
-    }
-    return queryCache
-  }
-
-  function getCookiesCache(): Record<string, unknown> {
-    if (!cookiesCache) {
-      if (!requestCookiesCache) {
-        requestCookiesCache = parseCookieHeader(normalizeHeaderValue(req.headers.cookie))
-      }
-      cookiesCache = { ...requestCookiesCache }
-    }
-    return cookiesCache
-  }
-
-  const param = ((name?: string, defaultValue?: unknown): unknown => {
-    if (!name) return sc.params
-    const value = sc.params[String(name)]
-    return value === undefined ? defaultValue : value
-  }) as StraviContext['param']
-
-  const sc: InternalStraviContext = {
-    req,
-    res,
-    path: pathname,
-    url: null as unknown as URL,
-    params,
-    env,
-    state: {},
-
-    param,
-
-    query(name?: string, defaultValue?: unknown): unknown {
-      const cached = getQueryCache()
-      if (!name) return cached
-      const value = cached[name]
-      return value === undefined ? defaultValue : value
-    },
-
-    body() {
-      if (bodyPromise) return bodyPromise
-
-      bodyPromise = readBodyWithLimit(req, bodyLimit).then((buffer) => {
-        const contentType = (normalizeHeaderValue(req.headers['content-type']) || '').toLowerCase()
-        return parseBodyByType(buffer, contentType)
-      })
-
-      return bodyPromise
-    },
-
-    headers(name?: string): unknown {
-      const cached = getHeadersCache()
-      if (!name) return cached
-      return cached[String(name).toLowerCase()]
-    },
-
-    cookies: {
-      get(name: string) {
-        const value = getCookiesCache()[name]
-        return typeof value === 'string' ? value : undefined
-      },
-      set(name: string, value: string, options: CookieOptions = {}) {
-        responseCookies.push(toCookieHeader(name, value, options))
-      },
-      delete(name: string, options: CookieOptions = {}) {
-        responseCookies.push(
-          toCookieHeader(name, '', {
-            ...options,
-            maxAge: 0,
-            expires: new Date(0)
-          })
-        )
-      },
-      all() {
-        if (!requestCookiesCache) {
-          requestCookiesCache = parseCookieHeader(normalizeHeaderValue(req.headers.cookie))
-        }
-        return Object.freeze({ ...requestCookiesCache })
-      }
-    },
-
-    status(code) {
-      res.statusCode = code
-      return this
-    },
-
-    set(name, value) {
-      res.setHeader(name, value)
-      return this
-    },
-
-    redirect(location, status = 302) {
-      if (!res.headersSent) {
-        res.statusCode = status
-        res.setHeader('Location', encodeURI(location))
-      }
-
-      this._commitCookies()
-      res.end()
-      return undefined
-    },
-
-    cookie(name, value, options = {}) {
-      this.cookies.set(name, value, options)
-      return this
-    },
-
-    clearCookie(name, options = {}) {
-      this.cookies.delete(name, options)
-      return this
-    },
-
-    json(value, status) {
-      if (!res.headersSent) {
-        res.statusCode = status ?? res.statusCode ?? 200
-        res.setHeader('Content-Type', 'application/json; charset=utf-8')
-      }
-
-      this._commitCookies()
-      if (value && typeof value === 'object' && Object.isFrozen(value)) {
-        const body = getStaticJsonBuffer(value as object)
-        if (!res.headersSent) {
-          res.setHeader('Content-Length', String(body.length))
-        }
-        res.end(body)
-        return undefined
-      }
-
-      res.end(JSON.stringify(value))
-      return undefined
-    },
-
-    text(value, status) {
-      if (!res.headersSent) {
-        res.statusCode = status ?? res.statusCode ?? 200
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8')
-      }
-
-      this._commitCookies()
-      res.end(value)
-      return undefined
-    },
-
-    html(value, status) {
-      if (!res.headersSent) {
-        res.statusCode = status ?? res.statusCode ?? 200
-        res.setHeader('Content-Type', 'text/html; charset=utf-8')
-      }
-
-      this._commitCookies()
-      res.end(value)
-      return undefined
-    },
-
-    _commitCookies() {
-      if (responseCookies.length === 0) return
-
-      const existing = res.getHeader('Set-Cookie')
-      if (!existing) {
-        res.setHeader('Set-Cookie', responseCookies)
-        return
-      }
-
-      const existingArray = Array.isArray(existing) ? existing.map(String) : [String(existing)]
-      res.setHeader('Set-Cookie', [...existingArray, ...responseCookies])
-    },
-
-    _sendAuto(value, routeFound) {
-      if (res.writableEnded) return
-
-      if (value === undefined) {
-        this._commitCookies()
-
-        if (!routeFound) {
-          res.statusCode = 404
-          res.setHeader('Content-Type', 'application/json; charset=utf-8')
-          res.end(JSON.stringify({ error: 'Not Found' }))
-          return
-        }
-
-        if (!res.headersSent) {
-          res.statusCode = res.statusCode || 204
-        }
-
-        res.end()
-        return
-      }
-
-      if (Buffer.isBuffer(value)) {
-        this._commitCookies()
-        if (!res.headersSent) res.statusCode = res.statusCode || 200
-        res.end(value)
-        return
-      }
-
-      if (typeof value === 'string') {
-        this.text(value, res.statusCode || 200)
-        return
-      }
-
-      if (typeof value === 'object') {
-        this.json(value, res.statusCode || 200)
-        return
-      }
-
-      this.text(String(value), res.statusCode || 200)
-    },
-
-    _allowedMethods() {
-      return pathMethods
-    },
-
-    _setParams(value: Record<string, string>) {
-      this.params = value
-    },
-
-    _setQuery(value: Record<string, unknown>) {
-      queryCache = value
-    },
-
-    _setHeaders(value: Record<string, unknown>) {
-      headersCache = value
-    },
-
-    _setCookies(value: Record<string, unknown>) {
-      cookiesCache = value
-    },
-
-    _setBody(value: unknown) {
-      bodyPromise = Promise.resolve(value)
-    }
-  }
-
-  Object.defineProperty(sc, 'url', {
-    enumerable: true,
-    configurable: false,
-    get() {
-      if (!urlCache) {
-        urlCache = new URL(requestUrl, `http://${host}`)
-      }
-      return urlCache
-    }
-  })
-
-  return sc
+type InternalCookieStore = StraviContext['cookies'] & {
+  _ctx: RequestContext
 }
 
+class RequestCookieStore implements InternalCookieStore {
+  _ctx: RequestContext
 
+  constructor(ctx: RequestContext) {
+    this._ctx = ctx
+  }
+
+  get(name: string): string | undefined {
+    const ctx = this._ctx
+    const value =
+      ctx._cookiesCache?.[name] ??
+      ctx._requestCookiesCache?.[name] ??
+      findCookieValue(ctx._rawCookieHeader, name)
+    return typeof value === 'string' ? value : undefined
+  }
+
+  set(name: string, value: string, options: CookieOptions = {}) {
+    ;(this._ctx._responseCookies ||= []).push(toCookieHeader(name, value, options))
+  }
+
+  delete(name: string, options: CookieOptions = {}) {
+    ;(this._ctx._responseCookies ||= []).push(
+      toCookieHeader(name, '', {
+        ...options,
+        maxAge: 0,
+        expires: new Date(0)
+      })
+    )
+  }
+
+  all() {
+    const ctx = this._ctx
+    if (!ctx._requestCookiesCache) {
+      ctx._requestCookiesCache = parseCookieHeader(ctx._rawCookieHeader)
+    }
+    return Object.freeze({ ...ctx._requestCookiesCache })
+  }
+}
+
+function getHeadersCache(ctx: RequestContext): Record<string, unknown> {
+  if (!ctx._headersCache) {
+    ctx._headersCache = { ...normalizeHeaders(ctx.req.headers) }
+  }
+  return ctx._headersCache
+}
+
+function getQueryCache(ctx: RequestContext): Record<string, unknown> {
+  if (!ctx._queryCache) {
+    ctx._queryCache = initialQuery(ctx._rawQuery)
+  }
+  return ctx._queryCache
+}
+
+class RequestContext implements InternalStraviContext {
+  req: IncomingMessage
+  res: ServerResponse
+  path: string
+  params: Record<string, string>
+  env: Readonly<Record<string, string | undefined>>
+  cookies: InternalCookieStore
+
+  _bodyLimit?: number
+  _host: string
+  _rawQuery: string
+  _requestUrl: string
+  _pathMethods: string[]
+  _rawCookieHeader: string | undefined
+  _responseCookies: string[] | null = null
+  _bodyPromise: Promise<unknown> | null = null
+  _queryCache: Record<string, unknown> | null = null
+  _headersCache: Record<string, unknown> | null = null
+  _cookiesCache: Record<string, unknown> | null = null
+  _requestCookiesCache: Record<string, string> | null = null
+  _stateStore: Record<string, unknown> | null = null
+  _urlCache: URL | null = null
+
+  constructor(input: CreateContextInput) {
+    this.req = input.req
+    this.res = input.res
+    this.path = input.pathname
+    this.params = input.params
+    this.env = input.env
+    this._bodyLimit = input.bodyLimit
+    this._host = input.host
+    this._rawQuery = input.rawQuery
+    this._requestUrl = input.requestUrl
+    this._pathMethods = input.pathMethods
+    this._rawCookieHeader = normalizeHeaderValue(input.req.headers.cookie)
+    this.cookies = new RequestCookieStore(this)
+  }
+
+  get url(): URL {
+    if (!this._urlCache) {
+      this._urlCache = new URL(this._requestUrl, `http://${this._host}`)
+    }
+    return this._urlCache
+  }
+
+  get state(): Record<string, unknown> {
+    if (!this._stateStore) {
+      this._stateStore = {}
+    }
+    return this._stateStore
+  }
+
+  set state(value: Record<string, unknown>) {
+    this._stateStore = value
+  }
+
+  param(): Record<string, string>
+  param<K extends string>(name: K): string
+  param(name: string): string | undefined
+  param<K extends string, TDefault>(name: K, defaultValue: TDefault): string | TDefault
+  param<TDefault>(name: string, defaultValue: TDefault): string | TDefault
+  param(name?: string, defaultValue?: unknown): Record<string, string> | string | undefined {
+    if (!name) return this.params
+    const value = this.params[String(name)]
+    return (value === undefined ? defaultValue : value) as string | undefined
+  }
+
+  query(name?: string, defaultValue?: unknown): unknown {
+    if (!name) return getQueryCache(this)
+    const key = String(name)
+    const cached = this._queryCache
+    const value = cached ? cached[key] : findQueryValue(this._rawQuery, key)
+    return value === undefined ? defaultValue : value
+  }
+
+  body() {
+    if (this._bodyPromise) return this._bodyPromise
+
+    this._bodyPromise = readBodyWithLimit(this.req, this._bodyLimit).then((buffer) => {
+      const contentType = (normalizeHeaderValue(this.req.headers['content-type']) || '').toLowerCase()
+      return parseBodyByType(buffer, contentType)
+    })
+
+    return this._bodyPromise
+  }
+
+  headers(name?: string): unknown {
+    if (!name) return getHeadersCache(this)
+    const key = String(name).toLowerCase()
+    if (this._headersCache) return this._headersCache[key]
+    return normalizeHeaderValue(this.req.headers[key])
+  }
+
+  status(code: number): this {
+    this.res.statusCode = code
+    return this
+  }
+
+  set(name: string, value: string): this {
+    this.res.setHeader(name, value)
+    return this
+  }
+
+  redirect(location: string, status = 302): undefined {
+    const res = this.res
+    if (!res.headersSent) {
+      res.statusCode = status
+      res.setHeader('Location', encodeURI(location))
+    }
+
+    this._commitCookies()
+    res.end()
+    return undefined
+  }
+
+  cookie(name: string, value: string, options: CookieOptions = {}): this {
+    this.cookies.set(name, value, options)
+    return this
+  }
+
+  clearCookie(name: string, options: CookieOptions = {}): this {
+    this.cookies.delete(name, options)
+    return this
+  }
+
+  json(value: unknown, status?: number): undefined {
+    const res = this.res
+    if (!res.headersSent) {
+      res.statusCode = status ?? res.statusCode ?? 200
+      res.setHeader('Content-Type', jsonContentType)
+    }
+
+    this._commitCookies()
+    if (value && typeof value === 'object' && Object.isFrozen(value)) {
+      const body = getStaticJsonBuffer(value as object)
+      if (!res.headersSent) {
+        res.setHeader('Content-Length', String(body.length))
+      }
+      res.end(body)
+      return undefined
+    }
+
+    res.end(JSON.stringify(value))
+    return undefined
+  }
+
+  text(value: string, status?: number): undefined {
+    const res = this.res
+    if (!res.headersSent) {
+      res.statusCode = status ?? res.statusCode ?? 200
+      res.setHeader('Content-Type', textContentType)
+    }
+
+    this._commitCookies()
+    res.end(value)
+    return undefined
+  }
+
+  html(value: string, status?: number): undefined {
+    const res = this.res
+    if (!res.headersSent) {
+      res.statusCode = status ?? res.statusCode ?? 200
+      res.setHeader('Content-Type', htmlContentType)
+    }
+
+    this._commitCookies()
+    res.end(value)
+    return undefined
+  }
+
+  _commitCookies(): void {
+    const responseCookies = this._responseCookies
+    if (!responseCookies || responseCookies.length === 0) return
+
+    const res = this.res
+    const existing = res.getHeader('Set-Cookie')
+    if (!existing) {
+      res.setHeader('Set-Cookie', responseCookies)
+      return
+    }
+
+    const existingArray = Array.isArray(existing) ? existing.map(String) : [String(existing)]
+    res.setHeader('Set-Cookie', [...existingArray, ...responseCookies])
+  }
+
+  _sendAuto(value: unknown, routeFound: boolean): void {
+    const res = this.res
+    if (res.writableEnded) return
+
+    if (value === undefined) {
+      this._commitCookies()
+
+      if (!routeFound) {
+        res.statusCode = 404
+        res.setHeader('Content-Type', jsonContentType)
+        res.setHeader('Content-Length', String(notFoundBuffer.length))
+        res.end(notFoundBuffer)
+        return
+      }
+
+      if (!res.headersSent) {
+        res.statusCode = res.statusCode || 204
+      }
+
+      res.end()
+      return
+    }
+
+    if (Buffer.isBuffer(value)) {
+      this._commitCookies()
+      if (!res.headersSent) res.statusCode = res.statusCode || 200
+      res.end(value)
+      return
+    }
+
+    if (typeof value === 'string') {
+      this.text(value, res.statusCode || 200)
+      return
+    }
+
+    if (typeof value === 'object') {
+      this.json(value, res.statusCode || 200)
+      return
+    }
+
+    this.text(String(value), res.statusCode || 200)
+  }
+
+  _allowedMethods(): string[] {
+    return this._pathMethods
+  }
+
+  _setParams(value: Record<string, string>): void {
+    this.params = value
+  }
+
+  _setQuery(value: Record<string, unknown>): void {
+    this._queryCache = value
+  }
+
+  _setHeaders(value: Record<string, unknown>): void {
+    this._headersCache = value
+  }
+
+  _setCookies(value: Record<string, unknown>): void {
+    this._cookiesCache = value
+  }
+
+  _setBody(value: unknown): void {
+    this._bodyPromise = Promise.resolve(value)
+  }
+}
+
+export function createContext(input: CreateContextInput): InternalStraviContext {
+  return new RequestContext(input)
+}

@@ -9,28 +9,40 @@ const payload = Object.freeze({
 })
 
 export async function startBenchServer(options = {}) {
-  const port = Number(options.port || process.env.BENCH_PORT || 4303)
-  const host = options.host || process.env.BENCH_HOST || '127.0.0.1'
+  const port = Number(options.port ?? process.env.BENCH_PORT ?? 4303)
+  const host = options.host ?? process.env.BENCH_HOST ?? '127.0.0.1'
   const app = new Hono()
 
   app.get('/json', (c) => c.json(payload))
   app.get('/text', (c) => c.text('ok'))
 
   let server = null
-  await new Promise((resolve) => {
+  await new Promise((resolve, reject) => {
     server = serve(
       {
         fetch: app.fetch,
         port,
         hostname: host
       },
-      () => resolve(undefined)
+      () => {
+        if (server) server.off('error', onError)
+        resolve(undefined)
+      }
     )
+
+    const onError = (error) => {
+      reject(error)
+    }
+
+    server.once('error', onError)
   })
+
+  const address = server.address()
+  const resolvedPort = typeof address === 'object' && address ? address.port : port
 
   return {
     host,
-    port,
+    port: resolvedPort,
     stop() {
       return new Promise((resolve) => {
         if (server && typeof server.close === 'function') {
