@@ -1,0 +1,13 @@
+{
+  "name": "Stravi-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "stravi-dev src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "stravi": "latest"
+  }
+}

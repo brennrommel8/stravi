@@ -16,4 +16,19 @@ npm create stravi@latest my-api
 pnpm create stravi@latest my-api
 ```
 
+The scaffolder will prompt for a language template:
+
+```text
+Select language:
+❯ TypeScript
+  JavaScript
+```
+
+You can also skip the prompt:
+
+```bash
+npm create stravi@latest my-api -- --ts
+npm create stravi@latest my-api -- --js
+```
+
 
