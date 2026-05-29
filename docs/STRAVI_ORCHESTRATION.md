@@ -65,7 +65,7 @@ Built-in middleware:
 - `cors` is built-in (no external install required).
 - Exposed as a first-party module import: `stravi/cors`.
 - Configurable through `app.use(cors(options))`.
-- Built-in dev runner: `stravi-dev` (auto-restart on file changes, nodemon-like).
+- Dev tooling should stay template-local or in a separate package, not in the runtime package.
 - Built-in WebSocket routing via `app.ws('/path', { open, message, close, error })`.
 
 ## 7) Developer API (Simpler Than Express/Hono)

@@ -1,6 +1,6 @@
 {
   "name": "stravi",
-  "version": "0.0.6",
+  "version": "0.0.5",
   "description": "Stravi lightweight Node.js backend framework",
   "type": "module",
   "main": "./dist/src/index.js",
@@ -29,13 +29,7 @@
     "./security": {
       "types": "./dist/src/middleware/security/index.d.ts",
       "default": "./dist/src/middleware/security/index.js"
-    },
-    "./dev": {
-      "default": "./dist/src/dev/index.js"
     }
-  },
-  "bin": {
-    "stravi-dev": "dist/src/dev/index.js"
   },
   "files": [
     "dist"
@@ -52,7 +46,6 @@
     "node": ">=18"
   },
   "dependencies": {
-    "tsx": "^4.20.6",
     "ws": "^8.21.0"
   },
   "devDependencies": {

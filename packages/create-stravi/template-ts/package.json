@@ -1,16 +1,18 @@
 {
   "name": "Stravi-app",
-  "version": "0.1.0",
+  "version": "0.0.7",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "stravi-dev src/index.ts"
+    "dev": "tsx watch src/index.ts",
+    "start": "node --import tsx src/index.ts"
   },
   "dependencies": {
     "stravi": "latest"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
+    "tsx": "^4.20.6",
     "typescript": "^5.8.3"
   }
 }

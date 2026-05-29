@@ -45,9 +45,6 @@ app.start(3000)</code></pre>
   - `stravi/static`
   - `stravi/logger`
   - `stravi/security`
-  - `stravi/dev` (CLI module path)
-- CLI bin:
-  - `stravi-dev`
 
 ## Main Exports (`Stravi`)
 
@@ -423,18 +420,18 @@ Errors:
 - Throws `ValidationError` with `issues: string[]`
 - Stravi route schema middleware catches this and responds with `400`
 
-## Dev CLI: `stravi-dev`
+## Dev Scripts
 
 ```bash
-stravi-dev src/index.ts
-stravi-dev src/index.ts -- --inspect
+npx tsx watch src/index.ts
+node --watch --enable-source-maps src/index.js
 ```
 
 Behavior:
 
-- Uses `node --watch --enable-source-maps`
-- Adds `--import tsx` automatically for TS entry files (`.ts/.tsx/.mts/.cts`)
-- Pass-through args after `--`
+- TypeScript apps can use `tsx` for watch mode
+- JavaScript apps can use native Node watch mode
+- The `stravi` runtime package does not bundle a dev runner
 
 ## Scaffolder Package: `create-stravi`
 
@@ -457,7 +454,8 @@ What it does:
 Template app includes:
 
 - `src/index.ts` basic Stravi server
-- `dev` script: `stravi-dev src/index.ts`
+- TypeScript template `dev` script: `tsx watch src/index.ts`
+- JavaScript template `dev` script: `node --watch --enable-source-maps src/index.js`
 
 ## Type-Safe Route Example
 

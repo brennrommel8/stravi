@@ -31,4 +31,9 @@ npm create stravi@latest my-api -- --ts
 npm create stravi@latest my-api -- --js
 ```
 
+Generated templates manage their own dev tooling:
+
+- TypeScript template uses `tsx`
+- JavaScript template uses `node --watch`
+
 

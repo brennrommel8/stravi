@@ -1,10 +1,10 @@
 {
   "name": "Stravi-app",
-  "version": "0.1.0",
+  "version": "0.0.7",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "stravi-dev src/index.js",
+    "dev": "node --watch --enable-source-maps src/index.js",
     "start": "node src/index.js"
   },
   "dependencies": {

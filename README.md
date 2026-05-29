@@ -19,7 +19,7 @@ pnpm create stravi@latest my-api
 - Built-in middleware for CORS, logging, static files, and security
 - Request and response helpers for JSON, text, HTML, cookies, redirects, and status handling
 - Router mounting with nested routes and path parameters
-- Dev CLI support through `stravi-dev`
+- Small runtime install footprint with no bundled TypeScript dev runner
 
 ## Links
 
