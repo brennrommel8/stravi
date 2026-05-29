@@ -1,4 +1,4 @@
-import type { Middleware } from '../../../core/src/types.js'
+import type { Middleware } from '../../core/types.js'
 
 export type Logger = {
   error: (message: string) => void

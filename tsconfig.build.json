@@ -8,8 +8,8 @@
     "outDir": "dist",
     "rootDir": "."
   },
-  "include": ["src/**/*.ts", "packages/**/*.ts"],
-  "exclude": ["dist", "node_modules", "examples", "test", "packages/create-stravi/template"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["dist", "node_modules", "examples", "test", "packages/create-stravi", "packages/create-stravi/template"]
 }
 
 

@@ -1,4 +1,4 @@
-import type { Validator } from '../../core/src/types.js'
+import type { Validator } from '../core/types.js'
 
 class ValidationError extends Error {
   issues: string[]

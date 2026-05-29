@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
-import type { Middleware } from '../../../core/src/types.js'
+import type { Middleware } from '../../core/types.js'
 
 const CONTENT_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',

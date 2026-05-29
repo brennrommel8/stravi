@@ -8,17 +8,17 @@
     "types": ["node"],
     "paths": {
       "stravi": ["./src/index.ts"],
-      "stravi/cors": ["./packages/middleware/cors/src/index.ts"],
-      "stravi/validator": ["./packages/validator/src/index.ts"],
-      "stravi/static": ["./packages/middleware/static/src/index.ts"],
-      "stravi/logger": ["./packages/middleware/logger/src/index.ts"],
-      "stravi/security": ["./packages/middleware/security/src/index.ts"],
-      "stravi/dev": ["./packages/dev/src/index.ts"]
+      "stravi/cors": ["./src/middleware/cors/index.ts"],
+      "stravi/validator": ["./src/validator/index.ts"],
+      "stravi/static": ["./src/middleware/static/index.ts"],
+      "stravi/logger": ["./src/middleware/logger/index.ts"],
+      "stravi/security": ["./src/middleware/security/index.ts"],
+      "stravi/dev": ["./src/dev/index.ts"]
     },
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "packages/**/*.ts", "examples/**/*.ts"],
+  "include": ["src/**/*.ts", "examples/**/*.ts"],
   "exclude": ["dist", "node_modules"]
 }

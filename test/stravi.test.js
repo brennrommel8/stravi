@@ -6,11 +6,11 @@ import os from 'node:os'
 import path from 'node:path'
 import { Stravi, HttpError, Router } from '../dist/src/index.js'
 import { WebSocket } from 'ws'
-import cors from '../dist/packages/middleware/cors/src/index.js'
-import logger from '../dist/packages/middleware/logger/src/index.js'
-import { csrf, rateLimit, secureHeaders } from '../dist/packages/middleware/security/src/index.js'
-import serveStatic from '../dist/packages/middleware/static/src/index.js'
-import v from '../dist/packages/validator/src/index.js'
+import cors from '../dist/src/middleware/cors/index.js'
+import logger from '../dist/src/middleware/logger/index.js'
+import { csrf, rateLimit, secureHeaders } from '../dist/src/middleware/security/index.js'
+import serveStatic from '../dist/src/middleware/static/index.js'
+import v from '../dist/src/validator/index.js'
 
 async function boot(app) {
   const server = app.start(0, '127.0.0.1')

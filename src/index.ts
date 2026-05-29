@@ -1,7 +1,7 @@
-export { Stravi } from '../packages/core/src/stravi.js'
-export { HttpError, HttpException, StraviError } from '../packages/core/src/http-exception.js'
-export { Router } from '../packages/core/src/router-builder.js'
-export { default as v, ValidationError } from '../packages/validator/src/index.js'
+export { Stravi } from './core/stravi.js'
+export { HttpError, HttpException, StraviError } from './core/http-exception.js'
+export { Router } from './core/router-builder.js'
+export { default as v, ValidationError } from './validator/index.js'
 export type {
   CookieOptions,
   CorsOptions,
@@ -17,6 +17,6 @@ export type {
   StraviWebSocketHandler,
   StraviOptions,
   Validator
-} from '../packages/core/src/types.js'
+} from './core/types.js'
 
 

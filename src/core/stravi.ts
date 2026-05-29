@@ -4,7 +4,7 @@ import { createContext } from './context.js'
 import { HttpError } from './http-exception.js'
 import { pathMatchesPrefix, ensureAbsolutePath, Router as RouteGroup } from './router-builder.js'
 import { Router as InternalRouter, normalizePath } from './router.js'
-import { ValidationError } from '../../validator/src/index.js'
+import { ValidationError } from '../validator/index.js'
 import { WebSocket, WebSocketServer } from 'ws'
 import type { RawData } from 'ws'
 import type {

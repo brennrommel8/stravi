@@ -11,31 +11,31 @@
       "default": "./dist/src/index.js"
     },
     "./cors": {
-      "types": "./dist/packages/middleware/cors/src/index.d.ts",
-      "default": "./dist/packages/middleware/cors/src/index.js"
+      "types": "./dist/src/middleware/cors/index.d.ts",
+      "default": "./dist/src/middleware/cors/index.js"
     },
     "./validator": {
-      "types": "./dist/packages/validator/src/index.d.ts",
-      "default": "./dist/packages/validator/src/index.js"
+      "types": "./dist/src/validator/index.d.ts",
+      "default": "./dist/src/validator/index.js"
     },
     "./static": {
-      "types": "./dist/packages/middleware/static/src/index.d.ts",
-      "default": "./dist/packages/middleware/static/src/index.js"
+      "types": "./dist/src/middleware/static/index.d.ts",
+      "default": "./dist/src/middleware/static/index.js"
     },
     "./logger": {
-      "types": "./dist/packages/middleware/logger/src/index.d.ts",
-      "default": "./dist/packages/middleware/logger/src/index.js"
+      "types": "./dist/src/middleware/logger/index.d.ts",
+      "default": "./dist/src/middleware/logger/index.js"
     },
     "./security": {
-      "types": "./dist/packages/middleware/security/src/index.d.ts",
-      "default": "./dist/packages/middleware/security/src/index.js"
+      "types": "./dist/src/middleware/security/index.d.ts",
+      "default": "./dist/src/middleware/security/index.js"
     },
     "./dev": {
-      "default": "./dist/packages/dev/src/index.js"
+      "default": "./dist/src/dev/index.js"
     }
   },
   "bin": {
-    "stravi-dev": "dist/packages/dev/src/index.js"
+    "stravi-dev": "dist/src/dev/index.js"
   },
   "files": [
     "dist"

@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
-import type { CookieOptions, Middleware, StraviContext } from '../../../core/src/types.js'
+import type { CookieOptions, Middleware, StraviContext } from '../../core/types.js'
 
 type HeaderSetter = Pick<StraviContext, 'set'> & { req: StraviContext['req']; res: StraviContext['res'] }
 
