@@ -88,10 +88,11 @@ function parseArgs(argv) {
 }
 
 function clearMenuLines(count) {
+  process.stdout.write('\r')
   for (let i = 0; i < count; i += 1) {
     process.stdout.write('\x1B[2K')
     if (i < count - 1) {
-      process.stdout.write('\x1B[1A')
+      process.stdout.write('\x1B[1A\r')
     }
   }
   process.stdout.write('\r')
@@ -102,7 +103,8 @@ function renderLanguagePrompt(selectedIndex) {
   process.stdout.write('Select language:\n')
   for (let i = 0; i < options.length; i += 1) {
     const prefix = i === selectedIndex ? '❯' : ' '
-    process.stdout.write(`${prefix} ${options[i]}\n`)
+    const suffix = i === options.length - 1 ? '' : '\n'
+    process.stdout.write(`${prefix} ${options[i]}${suffix}`)
   }
 }
 
@@ -150,7 +152,6 @@ async function promptForLanguage() {
       }
 
       if (key?.name === 'return') {
-        process.stdout.write('\n')
         cleanup(options[selectedIndex])
         return
       }
